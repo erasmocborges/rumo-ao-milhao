@@ -1,0 +1,31 @@
+{
+  "total": 100,
+  "areas": [
+    {
+      "area": "Linguagens, Códigos e suas Tecnologias",
+      "short": "Linguagens",
+      "count": 25
+    },
+    {
+      "area": "Ciências Humanas e suas Tecnologias",
+      "short": "Ciências Humanas",
+      "count": 25
+    },
+    {
+      "area": "Ciências da Natureza e suas Tecnologias",
+      "short": "Ciências da Natureza",
+      "count": 25
+    },
+    {
+      "area": "Matemática e suas Tecnologias",
+      "short": "Matemática",
+      "count": 25
+    }
+  ],
+  "fontes": [
+    "Inep — Provas e Gabaritos",
+    "Inep — Matriz de Referência",
+    "Inep — Cadernos 2024"
+  ],
+  "aviso": "Itens autorais reformulados, não reproduções literais de provas oficiais."
+}
