@@ -3,6 +3,7 @@
  * tinta azul-marinho e acentos Vermelho Caderno. Leitura clara antes de decoração.
  */
 import { useEffect, useMemo, useState } from "react";
+import { jsPDF } from "jspdf";
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -12,13 +13,20 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  FileDown,
   FileText,
   Filter,
   GraduationCap,
   Info,
   Menu,
+  Pause,
+  Play,
   Printer,
+  RotateCcw,
   Search,
+  Timer,
+  Trophy,
+  UserRound,
   X,
 } from "lucide-react";
 import {
@@ -53,6 +61,21 @@ const operationData = [
   { name: "Análise de fenômenos", value: 25 },
   { name: "Contexto histórico-social", value: 18 },
 ];
+
+type TimerPreset = "dia1" | "dia2";
+
+const timerPresets: Record<TimerPreset, { label: string; seconds: number }> = {
+  dia1: { label: "1.º dia · 5h30", seconds: 5 * 60 * 60 + 30 * 60 },
+  dia2: { label: "2.º dia · 5h", seconds: 5 * 60 * 60 },
+};
+
+function formatDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
 
 function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -103,7 +126,7 @@ function printPreview() {
   window.setTimeout(() => printWindow.print(), 300);
 }
 
-function QuestionCard({ q, selected, onSelect, revealed, onReveal }: { q: Question; selected?: string; onSelect: (answer: string) => void; revealed: boolean; onReveal: () => void }) {
+function QuestionCard({ q, selected, onSelect, revealed, onReveal, canReveal }: { q: Question; selected?: string; onSelect: (answer: string) => void; revealed: boolean; onReveal: () => void; canReveal: boolean }) {
   const meta = areaMeta[q.area as AreaName];
   return (
     <article className="question-card">
@@ -128,7 +151,7 @@ function QuestionCard({ q, selected, onSelect, revealed, onReveal }: { q: Questi
       </div>
       <div className="question-footer">
         <span>Referência curricular: <strong>{q.areaCurta}</strong></span>
-        <button className="reveal-button" onClick={onReveal}>{revealed ? `Resposta: ${q.correta}` : "Revelar gabarito"}</button>
+        {canReveal ? <button className="reveal-button" onClick={onReveal}>{revealed ? `Resposta: ${q.correta}` : "Ver resposta comentada"}</button> : <span className="answer-locked">Finalize a correção para consultar o comentário.</span>}
       </div>
       {revealed && <p className="answer-explanation"><strong>Por quê?</strong> {q.justificativa}</p>}
     </article>
@@ -143,6 +166,11 @@ export default function Home() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [showKey, setShowKey] = useState(false);
+  const [studentName, setStudentName] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [timerPreset, setTimerPreset] = useState<TimerPreset>("dia1");
+  const [remainingSeconds, setRemainingSeconds] = useState(timerPresets.dia1.seconds);
+  const [timerRunning, setTimerRunning] = useState(false);
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -159,8 +187,130 @@ export default function Home() {
 
   useEffect(() => setPage(1), [activeArea, query]);
 
-  const setAnswer = (numero: number, answer: string) => setAnswers((current) => ({ ...current, [numero]: answer }));
+  useEffect(() => {
+    if (!timerRunning || remainingSeconds <= 0) return;
+    const interval = window.setInterval(() => setRemainingSeconds((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(interval);
+  }, [timerRunning, remainingSeconds]);
+
+  useEffect(() => {
+    if (remainingSeconds === 0) setTimerRunning(false);
+  }, [remainingSeconds]);
+
+  const areaPerformance = useMemo(() => areaSummary.map((entry) => {
+    const areaQuestions = questions.filter((q) => q.area === entry.area);
+    const answered = areaQuestions.filter((q) => Boolean(answers[q.numero])).length;
+    const correct = areaQuestions.filter((q) => answers[q.numero] === q.correta).length;
+    return { ...entry, answered, correct, blank: areaQuestions.length - answered, percentage: Math.round((correct / areaQuestions.length) * 100) };
+  }), [answers]);
+
+  const totalAnswered = Object.keys(answers).length;
+  const totalCorrect = questions.filter((q) => answers[q.numero] === q.correta).length;
+  const overallPercentage = Math.round((totalCorrect / questions.length) * 100);
+  const isCriticalTime = remainingSeconds > 0 && remainingSeconds <= 10 * 60;
+  const isTimeOver = remainingSeconds === 0;
+  const performanceMessage = totalAnswered === 0
+    ? "Registre suas respostas para iniciar a leitura do desempenho."
+    : overallPercentage >= 70 ? "Bom domínio do conjunto. Observe as áreas com menor percentual para orientar a revisão."
+      : overallPercentage >= 45 ? "Há uma base de aprendizagem consistente; use os detalhes por área para organizar a próxima revisão."
+        : "O resultado mostra pontos concretos para retomar. Priorize uma área por vez e compare as respostas comentadas.";
+
+  const setAnswer = (numero: number, answer: string) => {
+    setAnswers((current) => ({ ...current, [numero]: answer }));
+    setSubmitted(false);
+  };
   const reveal = (numero: number) => setRevealed((current) => new Set(current).add(numero));
+  const resetTimer = () => {
+    setTimerRunning(false);
+    setRemainingSeconds(timerPresets[timerPreset].seconds);
+  };
+  const chooseTimerPreset = (preset: TimerPreset) => {
+    setTimerPreset(preset);
+    setTimerRunning(false);
+    setRemainingSeconds(timerPresets[preset].seconds);
+  };
+  const finishSimulation = () => {
+    setSubmitted(true);
+    setTimerRunning(false);
+    scrollToSection("resultado");
+  };
+  const exportPdfReport = () => {
+    const reportName = studentName.trim() || "Estudante";
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = 20;
+    doc.setFillColor(29, 42, 68);
+    doc.rect(0, 0, pageWidth, 34, "F");
+    doc.setTextColor(255, 250, 242);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.text("SIMULADO ENEM — RESULTADO INDIVIDUAL", 15, 16);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.text("Relatório de desempenho gerado localmente", 15, 23);
+    doc.setTextColor(29, 42, 68);
+    y = 46;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(reportName, 15, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(91, 102, 117);
+    doc.text(`Gerado em ${new Date().toLocaleDateString("pt-BR")} · Tempo restante: ${formatDuration(remainingSeconds)}`, 15, y + 6);
+    doc.setFillColor(244, 237, 227);
+    doc.roundedRect(15, y + 15, pageWidth - 30, 28, 2, 2, "F");
+    doc.setTextColor(29, 42, 68);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(24);
+    doc.text(`${overallPercentage}%`, 22, y + 33);
+    doc.setFontSize(9);
+    doc.text("PERCENTUAL GLOBAL DE ACERTOS", 52, y + 27);
+    doc.setFontSize(12);
+    doc.text(`${totalCorrect} acertos em 100 itens`, 52, y + 34);
+    y += 55;
+    doc.setFontSize(12);
+    doc.text("Desempenho detalhado por área", 15, y);
+    y += 8;
+    areaPerformance.forEach((area) => {
+      if (y > pageHeight - 32) { doc.addPage(); y = 20; }
+      const meta = areaMeta[area.area as AreaName];
+      const hex = meta.color.replace("#", "");
+      doc.setFillColor(parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16));
+      doc.rect(15, y - 4, 3, 18, "F");
+      doc.setTextColor(29, 42, 68);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.text(area.short, 23, y + 1);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(91, 102, 117);
+      doc.text(`${area.correct}/25 acertos · ${area.answered}/25 respondidas · ${area.blank} em branco`, 23, y + 7);
+      doc.setTextColor(29, 42, 68);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text(`${area.percentage}%`, pageWidth - 29, y + 4, { align: "right" });
+      y += 23;
+    });
+    if (y > pageHeight - 36) { doc.addPage(); y = 20; }
+    doc.setDrawColor(200, 77, 58);
+    doc.setLineWidth(.7);
+    doc.line(15, y + 4, pageWidth - 15, y + 4);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(29, 42, 68);
+    doc.text("Leitura pedagógica", 15, y + 13);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.6);
+    doc.setTextColor(91, 102, 117);
+    const observation = doc.splitTextToSize(performanceMessage + " A pontuação representa acertos simples neste simulado; não equivale à nota TRI do ENEM.", pageWidth - 30);
+    doc.text(observation, 15, y + 19);
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 128, 138);
+    doc.text("Simulado ENEM Interativo · Material autoral reformulado para prática pedagógica.", 15, pageHeight - 12);
+    const safeName = reportName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "estudante";
+    doc.save(`resultado-simulado-enem-${safeName}.pdf`);
+  };
 
   return (
     <div className="min-h-screen bg-[#F7F3EC] text-[#1D2A44]">
@@ -172,10 +322,12 @@ export default function Home() {
         <nav className={`main-nav ${menuOpen ? "open" : ""}`} aria-label="Navegação principal">
           <button onClick={() => { scrollToSection("matriz"); setMenuOpen(false); }}>Matriz</button>
           <button onClick={() => { scrollToSection("questoes"); setMenuOpen(false); }}>Questões</button>
+          <button onClick={() => { scrollToSection("resultado"); setMenuOpen(false); }}>Resultado</button>
           <button onClick={() => { scrollToSection("correcao"); setMenuOpen(false); }}>Correção</button>
           <button onClick={() => { scrollToSection("fontes"); setMenuOpen(false); }}>Fontes</button>
         </nav>
         <div className="top-actions">
+          <button className={`top-timer ${isCriticalTime ? "critical" : ""}`} onClick={() => scrollToSection("questoes")} aria-label="Ir para o cronômetro"><Timer size={15} /><span>{formatDuration(remainingSeconds)}</span></button>
           <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir caderno</Button>
           <button className="menu-button" aria-label="Abrir menu" onClick={() => setMenuOpen((value) => !value)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
@@ -188,7 +340,7 @@ export default function Home() {
             <h1>Revisão que vira <i>diagnóstico.</i></h1>
             <p>Um caderno de simulado para aplicar, interpretar e corrigir: **25 questões por área**, quatro alternativas e uma estrutura pronta para a sala de aula.</p>
             <div className="hero-actions">
-              <Button onClick={() => scrollToSection("questoes")} className="hero-primary">Explorar questões <ArrowRight size={17} /></Button>
+              <Button onClick={() => scrollToSection("questoes")} className="hero-primary">Iniciar simulado <ArrowRight size={17} /></Button>
               <button className="hero-secondary" onClick={() => downloadFile("mascara")}><ArrowDownToLine size={17} /> Baixar máscara</button>
             </div>
             <div className="hero-note"><Info size={15} /> Itens autorais inspirados em habilidades e temas de provas oficiais; não são reproduções literais.</div>
@@ -273,6 +425,26 @@ export default function Home() {
               <div><span className="eyebrow"><span></span> Leitura ativa</span><h2>Banco de questões<br /><i>para explorar.</i></h2></div>
               <div className="question-actions"><Button variant="outline" className="download-outline" onClick={() => downloadFile("caderno")}><ArrowDownToLine size={16} /> Baixar caderno</Button><Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir</Button></div>
             </div>
+            <section className="student-dashboard" id="resultado" aria-label="Painel de desempenho do estudante">
+              <div className="student-dashboard-top">
+                <div><span className="eyebrow"><span></span> Modo de realização</span><h3>Seu percurso, em tempo real.</h3><p>As respostas ficam apenas neste navegador durante a sessão. A pontuação é por acerto simples e não corresponde à nota TRI.</p></div>
+                <label className="student-name"><UserRound size={16} /><span>Nome no relatório</span><input value={studentName} onChange={(event) => setStudentName(event.target.value)} placeholder="Como quer ser identificado?" /></label>
+              </div>
+              <div className={`exam-timer ${isCriticalTime ? "critical" : ""} ${isTimeOver ? "finished" : ""}`}>
+                <div className="timer-copy"><div><Timer size={19} /><span>CRONÔMETRO DE SIMULAÇÃO</span></div><p>{isTimeOver ? "Tempo encerrado" : isCriticalTime ? "Atenção: últimos 10 minutos" : "Escolha o dia e inicie quando estiver pronto."}</p></div>
+                <div className="timer-display" aria-live="polite">{formatDuration(remainingSeconds)}</div>
+                <div className="timer-controls"><select value={timerPreset} onChange={(event) => chooseTimerPreset(event.target.value as TimerPreset)} aria-label="Selecionar duração da prova"><option value="dia1">1.º dia · 5h30</option><option value="dia2">2.º dia · 5h</option></select><button onClick={() => setTimerRunning((value) => !value)} disabled={isTimeOver} className="timer-start">{timerRunning ? <Pause size={15} /> : <Play size={15} />}{timerRunning ? "Pausar" : "Iniciar"}</button><button onClick={resetTimer} className="timer-reset" aria-label="Reiniciar cronômetro"><RotateCcw size={15} /></button></div>
+              </div>
+              <div className="live-score">
+                <div className="score-orbit" style={{ "--score": `${overallPercentage * 3.6}deg` } as React.CSSProperties}><div><strong>{overallPercentage}%</strong><span>acertos</span></div></div>
+                <div className="score-copy"><span className="mini-label">DESEMPENHO GLOBAL</span><h3>{totalCorrect} de 100 itens corretos</h3><p>{totalAnswered} respostas registradas · {100 - totalAnswered} itens em branco</p><p className="score-message">{performanceMessage}</p></div>
+                <div className="score-actions"><Button className="score-finalize" onClick={finishSimulation}><Trophy size={16} /> {submitted ? "Resultado atualizado" : "Finalizar e corrigir"}</Button><Button variant="outline" className="pdf-button" onClick={exportPdfReport} disabled={totalAnswered === 0}><FileDown size={16} /> Exportar PDF</Button></div>
+              </div>
+              <div className="area-performance-grid">
+                {areaPerformance.map((area) => { const meta = areaMeta[area.area as AreaName]; return <div className="area-performance" key={area.area}><div><span style={{ background: meta.color }}></span><p>{area.short}<small>{area.correct}/25 acertos</small></p><strong>{area.percentage}%</strong></div><div className="performance-track"><i style={{ width: `${area.percentage}%`, background: meta.color }}></i></div><small>{area.answered} respondidas · {area.blank} em branco</small></div>; })}
+              </div>
+              {submitted && <div className="result-ready"><Check size={17} /><p><strong>Correção concluída.</strong> Consulte as respostas comentadas nos itens, analise os percentuais por área e exporte seu relatório personalizado.</p></div>}
+            </section>
             <div className="filter-panel">
               <div className="filter-icon"><Filter size={18} /></div>
               <div className="area-filters" aria-label="Filtro de áreas"><button className={activeArea === "Todas" ? "active" : ""} onClick={() => setActiveArea("Todas")}>Todas <span>100</span></button>{areaSummary.map((entry) => <button key={entry.area} className={activeArea === entry.area ? "active" : ""} onClick={() => setActiveArea(entry.area as AreaName)}>{entry.short} <span>{entry.count}</span></button>)}</div>
@@ -280,7 +452,7 @@ export default function Home() {
             </div>
             <div className="results-bar"><p><strong>{filteredQuestions.length}</strong> itens encontrados {activeArea !== "Todas" && <>em <strong>{areaMeta[activeArea].short}</strong></>}</p><span>Página {page} de {totalPages}</span></div>
             <div className="questions-stack">
-              {currentQuestions.length ? currentQuestions.map((q) => <QuestionCard key={q.numero} q={q} selected={answers[q.numero]} onSelect={(answer) => setAnswer(q.numero, answer)} revealed={revealed.has(q.numero)} onReveal={() => reveal(q.numero)} />) : <div className="empty-state"><Search size={25} /><h3>Nenhum item encontrado</h3><p>Tente outro termo de busca ou selecione todas as áreas.</p></div>}
+              {currentQuestions.length ? currentQuestions.map((q) => <QuestionCard key={q.numero} q={q} selected={answers[q.numero]} onSelect={(answer) => setAnswer(q.numero, answer)} revealed={revealed.has(q.numero)} onReveal={() => reveal(q.numero)} canReveal={submitted} />) : <div className="empty-state"><Search size={25} /><h3>Nenhum item encontrado</h3><p>Tente outro termo de busca ou selecione todas as áreas.</p></div>}
             </div>
             {filteredQuestions.length > pageSize && <div className="pagination"><button disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={17} /> Anterior</button><div>{Array.from({ length: totalPages }, (_, index) => <button key={index} className={page === index + 1 ? "current" : ""} onClick={() => setPage(index + 1)}>{index + 1}</button>)}</div><button disabled={page === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Próxima <ChevronRight size={17} /></button></div>}
           </div>
