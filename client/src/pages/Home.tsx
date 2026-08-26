@@ -91,6 +91,7 @@ const timerPresets: Record<TimerPreset, { label: string; seconds: number }> = {
 const MAX_ATTEMPTS = 3;
 const ATTEMPTS_STORAGE_KEY = "simulado-enem-attempts-v1";
 const PROFILE_STORAGE_KEY = "simulado-enem-profile-v1";
+const PROGRESS_STORAGE_KEY = "simulado-enem-progress-v1";
 const TEACHER_SESSION_KEY = "simulado-enem-teacher-session-v1";
 const TEACHER_PASSWORD_TOKEN = "RW5lbVBvbGkyQDI2";
 
@@ -236,6 +237,9 @@ export default function Home() {
   const [teacherMode, setTeacherMode] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem(TEACHER_SESSION_KEY) === "active");
   const [teacherPassword, setTeacherPassword] = useState("");
   const [teacherError, setTeacherError] = useState(false);
+  const [progressNotice, setProgressNotice] = useState("");
+  const [teacherFilter, setTeacherFilter] = useState("todas");
+  const [teacherSort, setTeacherSort] = useState("score");
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -270,6 +274,13 @@ export default function Home() {
     window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify({ studentName, classroom, localId: localProfileId }));
   }, [studentName, classroom, localProfileId]);
 
+  useEffect(() => {
+    try {
+      const draft = JSON.parse(window.localStorage.getItem(PROGRESS_STORAGE_KEY) || "null");
+      if (draft?.answers) { setAnswers(draft.answers); setRemainingSeconds(draft.remainingSeconds ?? timerPresets.dia1.seconds); setProgressNotice("Progresso anterior restaurado."); }
+    } catch { /* ignorar rascunho inválido */ }
+  }, []);
+
   const areaPerformance = useMemo(() => areaSummary.map((entry) => {
     const areaQuestions = questions.filter((q) => q.area === entry.area);
     const answered = areaQuestions.filter((q) => Boolean(answers[q.numero])).length;
@@ -300,6 +311,8 @@ export default function Home() {
       .sort((a, b) => b.best - a.best)
       .map((record, index) => ({ ...record, label: `Participante ${String.fromCharCode(65 + index)}` }));
   }, [classAttempts]);
+  const teacherRows = useMemo(() => attempts.filter((attempt) => teacherFilter === "todas" || attempt.classroomKey === teacherFilter).sort((a, b) => teacherSort === "score" ? b.percentage - a.percentage : +new Date(b.createdAt) - +new Date(a.createdAt)), [attempts, teacherFilter, teacherSort]);
+  const teacherClassrooms = useMemo(() => Array.from(new Map(attempts.map((attempt) => [attempt.classroomKey, attempt.classroom])).entries()), [attempts]);
   const latestAttempt = studentAttempts[studentAttempts.length - 1];
   const wrongQuestions = useMemo(() => latestAttempt?.answers ? questions.filter((q) => latestAttempt.answers[q.numero] && latestAttempt.answers[q.numero] !== q.correta) : [], [latestAttempt]);
   const performanceMessage = totalAnswered === 0
@@ -343,6 +356,7 @@ export default function Home() {
       answers: { ...answers },
     };
     setAttempts((current) => [...current, record]);
+    window.localStorage.removeItem(PROGRESS_STORAGE_KEY);
     setSubmitted(true);
     setTimerRunning(false);
     scrollToSection("resultado");
@@ -365,6 +379,10 @@ export default function Home() {
     setTeacherMode(true); setTeacherPassword(""); setTeacherError(false);
   };
   const lockTeacherMode = () => { window.sessionStorage.removeItem(TEACHER_SESSION_KEY); setTeacherMode(false); setShowKey(false); };
+  const saveProgress = () => {
+    window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify({ answers, remainingSeconds, savedAt: new Date().toISOString() }));
+    setProgressNotice("Progresso salvo neste navegador.");
+  };
   const exportAllAttemptsCsv = () => {
     const header = ["Estudante", "Turma", "Data", "Acertos", "Respondidas", "Percentual", "Tempo restante", "Linguagens", "Humanas", "Natureza", "Matemática"];
     const rows = attempts.map((attempt) => {
@@ -413,6 +431,15 @@ export default function Home() {
     doc.setFontSize(12);
     doc.text("Desempenho detalhado por área", 15, y);
     y += 8;
+    areaPerformance.forEach((area, index) => {
+      const meta = areaMeta[area.area as AreaName];
+      const hex = meta.color.replace("#", "");
+      doc.setFillColor(parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16));
+      doc.rect(15, y + index * 8, area.percentage * 1.4, 4, "F");
+      doc.setTextColor(29, 42, 68); doc.setFontSize(7.5);
+      doc.text(`${area.short} — ${area.percentage}%`, 158, y + 3 + index * 8, { align: "right" });
+    });
+    y += 38;
     areaPerformance.forEach((area) => {
       if (y > pageHeight - 32) { doc.addPage(); y = 20; }
       const meta = areaMeta[area.area as AreaName];
@@ -584,8 +611,9 @@ export default function Home() {
               <div className="live-score">
                 <div className="score-orbit" style={{ "--score": `${overallPercentage * 3.6}deg` } as React.CSSProperties}><div><strong>{overallPercentage}%</strong><span>acertos</span></div></div>
                 <div className="score-copy"><span className="mini-label">DESEMPENHO GLOBAL · TENTATIVA {currentAttemptNumber}</span><h3>{totalCorrect} de 100 itens corretos</h3><p>{totalAnswered} respostas registradas · {100 - totalAnswered} itens em branco</p><p className="score-message">{maxAttemptsReached ? "Ciclo de três tentativas concluído. Consulte o acompanhamento local abaixo." : performanceMessage}</p></div>
-                <div className="score-actions"><Button className="score-finalize" onClick={finishSimulation} disabled={submitted || maxAttemptsReached || totalAnswered === 0}><Trophy size={16} /> {maxAttemptsReached ? "Ciclo concluído" : submitted ? "Resultado registrado" : "Finalizar e corrigir"}</Button><Button variant="outline" className="pdf-button" onClick={exportPdfReport} disabled={!submitted}><FileDown size={16} /> Exportar PDF</Button></div>
+                <div className="score-actions"><Button className="score-finalize" onClick={finishSimulation} disabled={submitted || maxAttemptsReached || totalAnswered === 0}><Trophy size={16} /> {maxAttemptsReached ? "Ciclo concluído" : submitted ? "Resultado registrado" : "Finalizar e corrigir"}</Button><Button variant="outline" className="pdf-button" onClick={saveProgress} disabled={submitted || maxAttemptsReached}><FileDown size={16} /> Salvar progresso</Button><Button variant="outline" className="pdf-button" onClick={exportPdfReport} disabled={!submitted}><FileDown size={16} /> Exportar PDF</Button></div>
               </div>
+              {progressNotice && <p className="text-xs px-8 pb-3 text-[#497464] font-bold">{progressNotice}</p>}
               <div className="area-performance-grid">
                 {areaPerformance.map((area) => { const meta = areaMeta[area.area as AreaName]; return <div className="area-performance" key={area.area}><div><span style={{ background: meta.color }}></span><p>{area.short}<small>{area.correct}/25 acertos</small></p><strong>{area.percentage}%</strong></div><div className="performance-track"><i style={{ width: `${area.percentage}%`, background: meta.color }}></i></div><small>{area.answered} respondidas · {area.blank} em branco</small></div>; })}
               </div>
@@ -609,6 +637,7 @@ export default function Home() {
           <div className="correction-copy"><span className="eyebrow light"><span></span> Correção organizada</span><h2>Do cartão-resposta<br />à <i>próxima aula.</i></h2><p>Use a máscara com as quatro alternativas, consulte o gabarito comentado e faça a correção com rastreabilidade por habilidade.</p><div className="correction-buttons"><Button onClick={() => downloadFile("mascara")}><ArrowDownToLine size={16} /> Baixar máscara</Button><Button variant="outline" className="light-outline" onClick={() => downloadFile("gabarito")}><BookOpenCheck size={16} /> Baixar gabarito</Button></div></div>
           <div className="correction-card"><img src="/manus-storage/enem-correction-detail_08ac5859.jpg" alt="Detalhe de uma folha de respostas sendo corrigida" /><div className="correction-card-body"><div><ClipboardCheck size={21} /><span>CHAVE DOCENTE</span></div><h3>100 respostas<br />em uma única matriz.</h3><button onClick={() => setShowKey((value) => !value)}>{showKey ? "Ocultar chave" : "Consultar chave"} <ArrowRight size={16} /></button></div></div>
           {showKey && <div className="answer-key" aria-live="polite"><div className="answer-key-title"><div><span className="mini-label">GABARITO RÁPIDO</span><h3>Chave de correção</h3></div><button onClick={() => setShowKey(false)} aria-label="Fechar chave"><X size={17} /></button></div><div className="answer-key-grid">{questions.map((q) => <div key={q.numero}><span>{String(q.numero).padStart(3, "0")}</span><strong>{q.correta}</strong></div>)}</div></div>}
+          <div className="answer-key"><div className="answer-key-title"><div><span className="mini-label">PAINEL DOCENTE</span><h3>Resultados locais</h3></div><div><select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="todas">Todas as turmas</option>{teacherClassrooms.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select><select value={teacherSort} onChange={(event) => setTeacherSort(event.target.value)}><option value="score">Maior pontuação</option><option value="date">Mais recente</option></select></div></div><div className="answer-key-grid">{teacherRows.map((attempt) => <div key={attempt.id}><span>{attempt.studentName} · {attempt.classroom}</span><strong>{attempt.percentage}%</strong></div>)}</div></div>
         </section>}
 
         {!teacherMode && <section className="sources-section" id="acesso-docente"><div className="sources-title"><span className="eyebrow"><span></span> Área restrita</span><h2>Acesso<br /><i>docente.</i></h2></div><div className="sources-list"><div className="disclaimer"><LockKeyhole size={17} /><p><strong>Materiais de correção protegidos.</strong> Informe a senha para visualizar máscara, gabarito e chave docente.</p></div><label className="search-field"><input type="password" value={teacherPassword} onChange={(event) => { setTeacherPassword(event.target.value); setTeacherError(false); }} onKeyDown={(event) => event.key === "Enter" && unlockTeacherMode()} placeholder="Senha do modo docente" /></label><Button className="print-button" onClick={unlockTeacherMode}>Entrar no modo docente</Button>{teacherError && <p className="text-[#C84D3A] text-xs font-bold">Senha não reconhecida.</p>}</div></section>}
