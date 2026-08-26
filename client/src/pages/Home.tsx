@@ -63,6 +63,7 @@ type Attempt = {
   percentage: number;
   remainingSeconds: number;
   byArea: AttemptArea[];
+  answers: Record<number, string>;
 };
 
 const areaMeta: Record<AreaName, { short: string; color: string; pale: string; bar: string; index: string }> = {
@@ -125,6 +126,10 @@ function formatDuration(totalSeconds: number) {
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   const seconds = safeSeconds % 60;
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function csvCell(value: string | number) {
+  return `"${String(value).replace(/"/g, '""')}"`;
 }
 
 function scrollToSection(id: string) {
@@ -225,6 +230,7 @@ export default function Home() {
   const [remainingSeconds, setRemainingSeconds] = useState(timerPresets.dia1.seconds);
   const [timerRunning, setTimerRunning] = useState(false);
   const [attempts, setAttempts] = useState<Attempt[]>(initialAttempts);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -289,6 +295,8 @@ export default function Home() {
       .sort((a, b) => b.best - a.best)
       .map((record, index) => ({ ...record, label: `Participante ${String.fromCharCode(65 + index)}` }));
   }, [classAttempts]);
+  const latestAttempt = studentAttempts[studentAttempts.length - 1];
+  const wrongQuestions = useMemo(() => latestAttempt?.answers ? questions.filter((q) => latestAttempt.answers[q.numero] && latestAttempt.answers[q.numero] !== q.correta) : [], [latestAttempt]);
   const performanceMessage = totalAnswered === 0
     ? "Registre suas respostas para iniciar a leitura do desempenho."
     : overallPercentage >= 70 ? "Bom domínio do conjunto. Observe as áreas com menor percentual para orientar a revisão."
@@ -327,6 +335,7 @@ export default function Home() {
       percentage: overallPercentage,
       remainingSeconds,
       byArea: areaPerformance.map((area) => ({ short: area.short, correct: area.correct, answered: area.answered, blank: area.blank, percentage: area.percentage })),
+      answers: { ...answers },
     };
     setAttempts((current) => [...current, record]);
     setSubmitted(true);
@@ -344,6 +353,16 @@ export default function Home() {
     setQuery("");
     setPage(1);
     scrollToSection("questoes");
+  };
+  const exportAllAttemptsCsv = () => {
+    const header = ["Estudante", "Turma", "Data", "Acertos", "Respondidas", "Percentual", "Tempo restante", "Linguagens", "Humanas", "Natureza", "Matemática"];
+    const rows = attempts.map((attempt) => {
+      const byArea = new Map(attempt.byArea.map((area) => [area.short, area.percentage]));
+      return [attempt.studentName, attempt.classroom, new Date(attempt.createdAt).toLocaleString("pt-BR"), attempt.correct, attempt.answered, `${attempt.percentage}%`, formatDuration(attempt.remainingSeconds), byArea.get("Linguagens") ?? "", byArea.get("Humanas") ?? "", byArea.get("Natureza") ?? "", byArea.get("Matemática") ?? ""];
+    });
+    const content = "\uFEFF" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+    const href = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a"); link.href = href; link.download = "resultados-simulado-todas-as-turmas.csv"; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(href);
   };
   const exportPdfReport = () => {
     const reportName = studentName.trim() || "Estudante";
@@ -559,7 +578,7 @@ export default function Home() {
                 {areaPerformance.map((area) => { const meta = areaMeta[area.area as AreaName]; return <div className="area-performance" key={area.area}><div><span style={{ background: meta.color }}></span><p>{area.short}<small>{area.correct}/25 acertos</small></p><strong>{area.percentage}%</strong></div><div className="performance-track"><i style={{ width: `${area.percentage}%`, background: meta.color }}></i></div><small>{area.answered} respondidas · {area.blank} em branco</small></div>; })}
               </div>
               {submitted && <div className="result-ready"><Check size={17} /><p><strong>Resultado registrado.</strong> Consulte as respostas comentadas, analise os percentuais por área e exporte seu relatório personalizado.</p>{!maxAttemptsReached && <button onClick={beginNextAttempt}>Iniciar tentativa {attemptsUsed + 1} <ArrowRight size={14} /></button>}</div>}
-              {maxAttemptsReached && <section className="attempts-complete" id="acompanhamento"><div className="attempts-complete-heading"><div><span className="eyebrow"><span></span> Ciclo concluído</span><h3>Três tentativas, agora em <i>perspectiva.</i></h3><p>O limite é aplicado localmente ao identificador e à turma informados neste navegador. Para um acompanhamento compartilhado entre dispositivos, é necessário sincronização em servidor.</p></div><div className="complete-lock"><LockKeyhole size={20} /><span>3 / 3</span></div></div><div className="local-insights"><article className="attempt-history"><div className="insight-title"><History size={18} /><div><span>HISTÓRICO DO ESTUDANTE</span><strong>{studentName.trim() || "Estudante local"}</strong></div></div>{studentAttempts.map((attempt, index) => <div className="attempt-row" key={attempt.id}><span>{String(index + 1).padStart(2, "0")}</span><p>{new Date(attempt.createdAt).toLocaleDateString("pt-BR")}<small>{attempt.correct}/100 acertos · {attempt.answered} respondidas</small></p><strong>{attempt.percentage}%</strong></div>)}</article><article className="teacher-panel"><div className="insight-title"><UsersRound size={18} /><div><span>PAINEL DOCENTE LOCAL</span><strong>{classroom.trim() || "Turma local"}</strong></div></div><div className="teacher-metrics"><div><strong>{uniqueStudentsInClass}</strong><span>estudantes</span></div><div><strong>{classAttempts.length}</strong><span>tentativas</span></div><div><strong>{classAverage}%</strong><span>média local</span></div></div><p>Os indicadores agregam somente registros salvos neste dispositivo para a turma atual.</p></article><article className="anonymous-ranking"><div className="insight-title"><Medal size={18} /><div><span>RANKING ANÔNIMO LOCAL</span><strong>Melhor resultado por participante</strong></div></div><div className="ranking-list">{anonymousRanking.map((entry, index) => <div key={entry.label}><span>{index + 1}</span><p>{entry.label}<small>{entry.attempts} {entry.attempts === 1 ? "tentativa" : "tentativas"}</small></p><strong>{entry.best}%</strong></div>)}</div></article></div></section>}
+              {maxAttemptsReached && <section className="attempts-complete" id="acompanhamento"><div className="attempts-complete-heading"><div><span className="eyebrow"><span></span> Ciclo concluído</span><h3>Três tentativas, agora em <i>perspectiva.</i></h3><p>O limite é aplicado localmente ao identificador e à turma informados neste navegador. Para um acompanhamento compartilhado entre dispositivos, é necessário sincronização em servidor.</p></div><div className="complete-lock"><LockKeyhole size={20} /><span>3 / 3</span></div></div><div className="local-insights"><article className="attempt-history"><div className="insight-title"><History size={18} /><div><span>HISTÓRICO DO ESTUDANTE</span><strong>{studentName.trim() || "Estudante local"}</strong></div></div>{studentAttempts.map((attempt, index) => <div className="attempt-row" key={attempt.id}><span>{String(index + 1).padStart(2, "0")}</span><p>{new Date(attempt.createdAt).toLocaleDateString("pt-BR")}<small>{attempt.correct}/100 acertos · {attempt.answered} respondidas</small></p><strong>{attempt.percentage}%</strong></div>)}</article><article className="teacher-panel"><div className="insight-title"><UsersRound size={18} /><div><span>PAINEL DOCENTE LOCAL</span><strong>{classroom.trim() || "Turma local"}</strong></div></div><div className="teacher-metrics"><div><strong>{uniqueStudentsInClass}</strong><span>estudantes</span></div><div><strong>{classAttempts.length}</strong><span>tentativas</span></div><div><strong>{classAverage}%</strong><span>média local</span></div></div><p>Os indicadores agregam somente registros salvos neste dispositivo para a turma atual.</p><button className="csv-export" onClick={exportAllAttemptsCsv}><FileDown size={14} /> Exportar CSV de todas as turmas</button></article><article className="anonymous-ranking"><div className="insight-title"><Medal size={18} /><div><span>RANKING ANÔNIMO LOCAL</span><strong>Melhor resultado por participante</strong></div></div><div className="ranking-list">{anonymousRanking.map((entry, index) => <div key={entry.label}><span>{index + 1}</span><p>{entry.label}<small>{entry.attempts} {entry.attempts === 1 ? "tentativa" : "tentativas"}</small></p><strong>{entry.best}%</strong></div>)}</div></article></div><section className="review-panel"><div className="review-heading"><div><span className="eyebrow"><span></span> Modo de revisão</span><h4>Erros que viram <i>próximo passo.</i></h4><p>Após a terceira tentativa, compare suas respostas incorretas da última realização com o gabarito e a explicação detalhada.</p></div><button onClick={() => setReviewOpen((value) => !value)}>{reviewOpen ? "Ocultar revisão" : `Revisar ${wrongQuestions.length} erros`} <ArrowRight size={15} /></button></div>{reviewOpen && <div className="review-list">{latestAttempt?.answers ? wrongQuestions.map((q) => <article className="review-item" key={q.numero}><p><strong>Questão {String(q.numero).padStart(2, "0")}</strong> · {q.enunciado}</p><div><span>Sua resposta: <b>{latestAttempt.answers[q.numero]}</b></span><span>Correta: <b>{q.correta}</b></span></div><aside><Check size={15} /> <strong>Explicação:</strong> {q.justificativa}</aside></article>) : <p className="review-empty">As tentativas anteriores não registraram as alternativas. A revisão estará disponível nas próximas tentativas concluídas.</p>}</div>}</section></section>}
             </section>
             <div className="filter-panel">
               <div className="filter-icon"><Filter size={18} /></div>
