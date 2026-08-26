@@ -91,6 +91,8 @@ const timerPresets: Record<TimerPreset, { label: string; seconds: number }> = {
 const MAX_ATTEMPTS = 3;
 const ATTEMPTS_STORAGE_KEY = "simulado-enem-attempts-v1";
 const PROFILE_STORAGE_KEY = "simulado-enem-profile-v1";
+const TEACHER_SESSION_KEY = "simulado-enem-teacher-session-v1";
+const TEACHER_PASSWORD_TOKEN = "RW5lbVBvbGkyQDI2";
 
 function normalizeIdentity(value: string, fallback: string) {
   return (value.trim() || fallback)
@@ -231,6 +233,9 @@ export default function Home() {
   const [timerRunning, setTimerRunning] = useState(false);
   const [attempts, setAttempts] = useState<Attempt[]>(initialAttempts);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [teacherMode, setTeacherMode] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem(TEACHER_SESSION_KEY) === "active");
+  const [teacherPassword, setTeacherPassword] = useState("");
+  const [teacherError, setTeacherError] = useState(false);
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -354,6 +359,12 @@ export default function Home() {
     setPage(1);
     scrollToSection("questoes");
   };
+  const unlockTeacherMode = () => {
+    if (btoa(teacherPassword) !== TEACHER_PASSWORD_TOKEN) { setTeacherError(true); return; }
+    window.sessionStorage.setItem(TEACHER_SESSION_KEY, "active");
+    setTeacherMode(true); setTeacherPassword(""); setTeacherError(false);
+  };
+  const lockTeacherMode = () => { window.sessionStorage.removeItem(TEACHER_SESSION_KEY); setTeacherMode(false); setShowKey(false); };
   const exportAllAttemptsCsv = () => {
     const header = ["Estudante", "Turma", "Data", "Acertos", "Respondidas", "Percentual", "Tempo restante", "Linguagens", "Humanas", "Natureza", "Matemática"];
     const rows = attempts.map((attempt) => {
@@ -454,10 +465,11 @@ export default function Home() {
           <button onClick={() => { scrollToSection("questoes"); setMenuOpen(false); }}>Questões</button>
           <button onClick={() => { scrollToSection("resultado"); setMenuOpen(false); }}>Resultado</button>
           {maxAttemptsReached && <button onClick={() => { scrollToSection("acompanhamento"); setMenuOpen(false); }}>Acompanhamento</button>}
-          <button onClick={() => { scrollToSection("correcao"); setMenuOpen(false); }}>Correção</button>
+          {teacherMode && <button onClick={() => { scrollToSection("correcao"); setMenuOpen(false); }}>Correção</button>}
           <button onClick={() => { scrollToSection("fontes"); setMenuOpen(false); }}>Fontes</button>
         </nav>
         <div className="top-actions">
+          {teacherMode ? <button className="top-timer" onClick={lockTeacherMode}>Sair do modo docente</button> : <button className="top-timer" onClick={() => scrollToSection("acesso-docente")}>Acesso docente</button>}
           <button className={`top-timer ${isCriticalTime ? "critical" : ""}`} onClick={() => scrollToSection("questoes")} aria-label="Ir para o cronômetro"><Timer size={15} /><span>{formatDuration(remainingSeconds)}</span></button>
           <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir caderno</Button>
           <button className="menu-button" aria-label="Abrir menu" onClick={() => setMenuOpen((value) => !value)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
@@ -472,7 +484,7 @@ export default function Home() {
             <p>Um caderno de simulado para aplicar, interpretar e corrigir: **25 questões por área**, quatro alternativas e uma estrutura pronta para a sala de aula.</p>
             <div className="hero-actions">
               <Button onClick={() => scrollToSection("questoes")} className="hero-primary">Iniciar simulado <ArrowRight size={17} /></Button>
-              <button className="hero-secondary" onClick={() => downloadFile("mascara")}><ArrowDownToLine size={17} /> Baixar máscara</button>
+              {teacherMode && <button className="hero-secondary" onClick={() => downloadFile("mascara")}><ArrowDownToLine size={17} /> Baixar máscara</button>}
             </div>
             <div className="hero-note"><Info size={15} /> Itens autorais inspirados em habilidades e temas de provas oficiais; não são reproduções literais.</div>
           </div>
@@ -587,17 +599,19 @@ export default function Home() {
             </div>
             <div className="results-bar"><p><strong>{filteredQuestions.length}</strong> itens encontrados {activeArea !== "Todas" && <>em <strong>{areaMeta[activeArea].short}</strong></>}</p><span>Página {page} de {totalPages}</span></div>
             <div className="questions-stack">
-              {currentQuestions.length ? currentQuestions.map((q) => <QuestionCard key={q.numero} q={q} selected={answers[q.numero]} onSelect={(answer) => setAnswer(q.numero, answer)} revealed={revealed.has(q.numero)} onReveal={() => reveal(q.numero)} canReveal={submitted} disabled={submitted || maxAttemptsReached} />) : <div className="empty-state"><Search size={25} /><h3>Nenhum item encontrado</h3><p>Tente outro termo de busca ou selecione todas as áreas.</p></div>}
+              {currentQuestions.length ? currentQuestions.map((q) => <QuestionCard key={q.numero} q={q} selected={answers[q.numero]} onSelect={(answer) => setAnswer(q.numero, answer)} revealed={revealed.has(q.numero)} onReveal={() => reveal(q.numero)} canReveal={submitted && teacherMode} disabled={submitted || maxAttemptsReached} />) : <div className="empty-state"><Search size={25} /><h3>Nenhum item encontrado</h3><p>Tente outro termo de busca ou selecione todas as áreas.</p></div>}
             </div>
             {filteredQuestions.length > pageSize && <div className="pagination"><button disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={17} /> Anterior</button><div>{Array.from({ length: totalPages }, (_, index) => <button key={index} className={page === index + 1 ? "current" : ""} onClick={() => setPage(index + 1)}>{index + 1}</button>)}</div><button disabled={page === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Próxima <ChevronRight size={17} /></button></div>}
           </div>
         </section>
 
-        <section className="correction-section" id="correcao">
+        {teacherMode && <section className="correction-section" id="correcao">
           <div className="correction-copy"><span className="eyebrow light"><span></span> Correção organizada</span><h2>Do cartão-resposta<br />à <i>próxima aula.</i></h2><p>Use a máscara com as quatro alternativas, consulte o gabarito comentado e faça a correção com rastreabilidade por habilidade.</p><div className="correction-buttons"><Button onClick={() => downloadFile("mascara")}><ArrowDownToLine size={16} /> Baixar máscara</Button><Button variant="outline" className="light-outline" onClick={() => downloadFile("gabarito")}><BookOpenCheck size={16} /> Baixar gabarito</Button></div></div>
           <div className="correction-card"><img src="/manus-storage/enem-correction-detail_08ac5859.jpg" alt="Detalhe de uma folha de respostas sendo corrigida" /><div className="correction-card-body"><div><ClipboardCheck size={21} /><span>CHAVE DOCENTE</span></div><h3>100 respostas<br />em uma única matriz.</h3><button onClick={() => setShowKey((value) => !value)}>{showKey ? "Ocultar chave" : "Consultar chave"} <ArrowRight size={16} /></button></div></div>
           {showKey && <div className="answer-key" aria-live="polite"><div className="answer-key-title"><div><span className="mini-label">GABARITO RÁPIDO</span><h3>Chave de correção</h3></div><button onClick={() => setShowKey(false)} aria-label="Fechar chave"><X size={17} /></button></div><div className="answer-key-grid">{questions.map((q) => <div key={q.numero}><span>{String(q.numero).padStart(3, "0")}</span><strong>{q.correta}</strong></div>)}</div></div>}
-        </section>
+        </section>}
+
+        {!teacherMode && <section className="sources-section" id="acesso-docente"><div className="sources-title"><span className="eyebrow"><span></span> Área restrita</span><h2>Acesso<br /><i>docente.</i></h2></div><div className="sources-list"><div className="disclaimer"><LockKeyhole size={17} /><p><strong>Materiais de correção protegidos.</strong> Informe a senha para visualizar máscara, gabarito e chave docente.</p></div><label className="search-field"><input type="password" value={teacherPassword} onChange={(event) => { setTeacherPassword(event.target.value); setTeacherError(false); }} onKeyDown={(event) => event.key === "Enter" && unlockTeacherMode()} placeholder="Senha do modo docente" /></label><Button className="print-button" onClick={unlockTeacherMode}>Entrar no modo docente</Button>{teacherError && <p className="text-[#C84D3A] text-xs font-bold">Senha não reconhecida.</p>}</div></section>}
 
         <section className="sources-section" id="fontes">
           <div className="sources-title"><span className="eyebrow"><span></span> Transparência editorial</span><h2>Fontes e<br /><i>delimitação.</i></h2></div>
