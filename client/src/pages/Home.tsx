@@ -17,8 +17,11 @@ import {
   FileText,
   Filter,
   GraduationCap,
+  History,
   Info,
+  LockKeyhole,
   Menu,
+  Medal,
   Pause,
   Play,
   Printer,
@@ -27,6 +30,7 @@ import {
   Timer,
   Trophy,
   UserRound,
+  UsersRound,
   X,
 } from "lucide-react";
 import {
@@ -46,6 +50,20 @@ import { questions, areaSummary, type Question } from "@/data/simulado";
 type AreaName = (typeof questions)[number]["area"];
 type FilterArea = AreaName | "Todas";
 type DownloadMode = "caderno" | "gabarito" | "mascara";
+type AttemptArea = { short: string; correct: number; answered: number; blank: number; percentage: number };
+type Attempt = {
+  id: string;
+  studentKey: string;
+  studentName: string;
+  classroomKey: string;
+  classroom: string;
+  createdAt: string;
+  correct: number;
+  answered: number;
+  percentage: number;
+  remainingSeconds: number;
+  byArea: AttemptArea[];
+};
 
 const areaMeta: Record<AreaName, { short: string; color: string; pale: string; bar: string; index: string }> = {
   "Linguagens, Códigos e suas Tecnologias": { short: "Linguagens", color: "#C84D3A", pale: "#F5E1D9", bar: "#C84D3A", index: "01" },
@@ -68,6 +86,38 @@ const timerPresets: Record<TimerPreset, { label: string; seconds: number }> = {
   dia1: { label: "1.º dia · 5h30", seconds: 5 * 60 * 60 + 30 * 60 },
   dia2: { label: "2.º dia · 5h", seconds: 5 * 60 * 60 },
 };
+
+const MAX_ATTEMPTS = 3;
+const ATTEMPTS_STORAGE_KEY = "simulado-enem-attempts-v1";
+const PROFILE_STORAGE_KEY = "simulado-enem-profile-v1";
+
+function normalizeIdentity(value: string, fallback: string) {
+  return (value.trim() || fallback)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/\s+/g, " ");
+}
+
+function initialAttempts(): Attempt[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(ATTEMPTS_STORAGE_KEY) || "[]");
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
+function initialProfile() {
+  if (typeof window === "undefined") return { studentName: "", classroom: "", localId: "servidor" };
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(PROFILE_STORAGE_KEY) || "{}");
+    return { studentName: typeof stored.studentName === "string" ? stored.studentName : "", classroom: typeof stored.classroom === "string" ? stored.classroom : "", localId: typeof stored.localId === "string" ? stored.localId : `perfil-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
+  } catch {
+    return { studentName: "", classroom: "", localId: `perfil-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
+  }
+}
 
 function formatDuration(totalSeconds: number) {
   const safeSeconds = Math.max(0, totalSeconds);
@@ -126,10 +176,10 @@ function printPreview() {
   window.setTimeout(() => printWindow.print(), 300);
 }
 
-function QuestionCard({ q, selected, onSelect, revealed, onReveal, canReveal }: { q: Question; selected?: string; onSelect: (answer: string) => void; revealed: boolean; onReveal: () => void; canReveal: boolean }) {
+function QuestionCard({ q, selected, onSelect, revealed, onReveal, canReveal, disabled }: { q: Question; selected?: string; onSelect: (answer: string) => void; revealed: boolean; onReveal: () => void; canReveal: boolean; disabled: boolean }) {
   const meta = areaMeta[q.area as AreaName];
   return (
-    <article className="question-card">
+    <article className="question-card" style={{ "--question-color": meta.color, "--question-pale": meta.pale } as React.CSSProperties}>
       <div className="question-meta">
         <span className="question-number">{String(q.numero).padStart(2, "0")}</span>
         <span className="topic-chip" style={{ backgroundColor: meta.pale, color: meta.color }}>{q.habilidade}</span>
@@ -142,7 +192,7 @@ function QuestionCard({ q, selected, onSelect, revealed, onReveal, canReveal }: 
           const isCorrect = revealed && q.correta === letter;
           const isWrong = revealed && isSelected && q.correta !== letter;
           return (
-            <button key={letter} className={`alternative ${isSelected ? "selected" : ""} ${isCorrect ? "correct" : ""} ${isWrong ? "wrong" : ""}`} onClick={() => onSelect(letter)} role="radio" aria-checked={isSelected}>
+            <button key={letter} disabled={disabled} className={`alternative ${isSelected ? "selected" : ""} ${isCorrect ? "correct" : ""} ${isWrong ? "wrong" : ""}`} onClick={() => onSelect(letter)} role="radio" aria-checked={isSelected}>
               <span>{letter}</span><span>{q.alternativas[letter]}</span>
               {isCorrect && <Check size={16} strokeWidth={2.8} />}
             </button>
@@ -166,11 +216,15 @@ export default function Home() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [showKey, setShowKey] = useState(false);
-  const [studentName, setStudentName] = useState("");
+  const profile = useMemo(() => initialProfile(), []);
+  const [studentName, setStudentName] = useState(profile.studentName);
+  const [classroom, setClassroom] = useState(profile.classroom);
+  const [localProfileId] = useState(profile.localId);
   const [submitted, setSubmitted] = useState(false);
   const [timerPreset, setTimerPreset] = useState<TimerPreset>("dia1");
   const [remainingSeconds, setRemainingSeconds] = useState(timerPresets.dia1.seconds);
   const [timerRunning, setTimerRunning] = useState(false);
+  const [attempts, setAttempts] = useState<Attempt[]>(initialAttempts);
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -197,6 +251,14 @@ export default function Home() {
     if (remainingSeconds === 0) setTimerRunning(false);
   }, [remainingSeconds]);
 
+  useEffect(() => {
+    window.localStorage.setItem(ATTEMPTS_STORAGE_KEY, JSON.stringify(attempts));
+  }, [attempts]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify({ studentName, classroom, localId: localProfileId }));
+  }, [studentName, classroom, localProfileId]);
+
   const areaPerformance = useMemo(() => areaSummary.map((entry) => {
     const areaQuestions = questions.filter((q) => q.area === entry.area);
     const answered = areaQuestions.filter((q) => Boolean(answers[q.numero])).length;
@@ -209,6 +271,24 @@ export default function Home() {
   const overallPercentage = Math.round((totalCorrect / questions.length) * 100);
   const isCriticalTime = remainingSeconds > 0 && remainingSeconds <= 10 * 60;
   const isTimeOver = remainingSeconds === 0;
+  const studentKey = localProfileId;
+  const classroomKey = normalizeIdentity(classroom, "turma-local");
+  const studentAttempts = attempts.filter((attempt) => attempt.studentKey === studentKey);
+  const attemptsUsed = studentAttempts.length;
+  const attemptsRemaining = Math.max(0, MAX_ATTEMPTS - attemptsUsed);
+  const maxAttemptsReached = attemptsUsed >= MAX_ATTEMPTS;
+  const currentAttemptNumber = Math.min(attemptsUsed + 1, MAX_ATTEMPTS);
+  const classAttempts = attempts.filter((attempt) => attempt.classroomKey === classroomKey);
+  const uniqueStudentsInClass = new Set(classAttempts.map((attempt) => attempt.studentKey)).size;
+  const classAverage = classAttempts.length ? Math.round(classAttempts.reduce((sum, attempt) => sum + attempt.percentage, 0) / classAttempts.length) : 0;
+  const anonymousRanking = useMemo(() => {
+    const recordsByStudent = new Map<string, Attempt[]>();
+    classAttempts.forEach((attempt) => recordsByStudent.set(attempt.studentKey, [...(recordsByStudent.get(attempt.studentKey) || []), attempt]));
+    return Array.from(recordsByStudent.values())
+      .map((records: Attempt[]) => ({ best: Math.max(...records.map((record: Attempt) => record.percentage)), attempts: records.length }))
+      .sort((a, b) => b.best - a.best)
+      .map((record, index) => ({ ...record, label: `Participante ${String.fromCharCode(65 + index)}` }));
+  }, [classAttempts]);
   const performanceMessage = totalAnswered === 0
     ? "Registre suas respostas para iniciar a leitura do desempenho."
     : overallPercentage >= 70 ? "Bom domínio do conjunto. Observe as áreas com menor percentual para orientar a revisão."
@@ -216,23 +296,54 @@ export default function Home() {
         : "O resultado mostra pontos concretos para retomar. Priorize uma área por vez e compare as respostas comentadas.";
 
   const setAnswer = (numero: number, answer: string) => {
+    if (submitted || maxAttemptsReached) return;
     setAnswers((current) => ({ ...current, [numero]: answer }));
     setSubmitted(false);
   };
   const reveal = (numero: number) => setRevealed((current) => new Set(current).add(numero));
   const resetTimer = () => {
+    if (submitted || maxAttemptsReached) return;
     setTimerRunning(false);
     setRemainingSeconds(timerPresets[timerPreset].seconds);
   };
   const chooseTimerPreset = (preset: TimerPreset) => {
+    if (submitted || maxAttemptsReached) return;
     setTimerPreset(preset);
     setTimerRunning(false);
     setRemainingSeconds(timerPresets[preset].seconds);
   };
   const finishSimulation = () => {
+    if (submitted || maxAttemptsReached || totalAnswered === 0) return;
+    const now = new Date().toISOString();
+    const record: Attempt = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      studentKey,
+      studentName: studentName.trim() || "Estudante local",
+      classroomKey,
+      classroom: classroom.trim() || "Turma local",
+      createdAt: now,
+      correct: totalCorrect,
+      answered: totalAnswered,
+      percentage: overallPercentage,
+      remainingSeconds,
+      byArea: areaPerformance.map((area) => ({ short: area.short, correct: area.correct, answered: area.answered, blank: area.blank, percentage: area.percentage })),
+    };
+    setAttempts((current) => [...current, record]);
     setSubmitted(true);
     setTimerRunning(false);
     scrollToSection("resultado");
+  };
+  const beginNextAttempt = () => {
+    if (maxAttemptsReached) return;
+    setAnswers({});
+    setRevealed(new Set());
+    setSubmitted(false);
+    setTimerRunning(false);
+    setRemainingSeconds(timerPresets[timerPreset].seconds);
+    setActiveArea("Todas");
+    setQuery("");
+    setPage(1);
+    scrollToSection("questoes");
   };
   const exportPdfReport = () => {
     const reportName = studentName.trim() || "Estudante";
@@ -257,7 +368,7 @@ export default function Home() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(91, 102, 117);
-    doc.text(`Gerado em ${new Date().toLocaleDateString("pt-BR")} · Tempo restante: ${formatDuration(remainingSeconds)}`, 15, y + 6);
+    doc.text(`Tentativa ${Math.max(1, attemptsUsed)} de ${MAX_ATTEMPTS} · Gerado em ${new Date().toLocaleDateString("pt-BR")} · Tempo restante: ${formatDuration(remainingSeconds)}`, 15, y + 6);
     doc.setFillColor(244, 237, 227);
     doc.roundedRect(15, y + 15, pageWidth - 30, 28, 2, 2, "F");
     doc.setTextColor(29, 42, 68);
@@ -323,6 +434,7 @@ export default function Home() {
           <button onClick={() => { scrollToSection("matriz"); setMenuOpen(false); }}>Matriz</button>
           <button onClick={() => { scrollToSection("questoes"); setMenuOpen(false); }}>Questões</button>
           <button onClick={() => { scrollToSection("resultado"); setMenuOpen(false); }}>Resultado</button>
+          {maxAttemptsReached && <button onClick={() => { scrollToSection("acompanhamento"); setMenuOpen(false); }}>Acompanhamento</button>}
           <button onClick={() => { scrollToSection("correcao"); setMenuOpen(false); }}>Correção</button>
           <button onClick={() => { scrollToSection("fontes"); setMenuOpen(false); }}>Fontes</button>
         </nav>
@@ -423,36 +535,40 @@ export default function Home() {
           <div className="section-body">
             <div className="question-header">
               <div><span className="eyebrow"><span></span> Leitura ativa</span><h2>Banco de questões<br /><i>para explorar.</i></h2></div>
+              <span className="workbook-note">folha de aplicação<br />marque uma opção</span>
               <div className="question-actions"><Button variant="outline" className="download-outline" onClick={() => downloadFile("caderno")}><ArrowDownToLine size={16} /> Baixar caderno</Button><Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir</Button></div>
             </div>
             <section className="student-dashboard" id="resultado" aria-label="Painel de desempenho do estudante">
+              <span className="workbook-folio">FOLHA 01 · APLICAÇÃO E ACOMPANHAMENTO</span>
               <div className="student-dashboard-top">
-                <div><span className="eyebrow"><span></span> Modo de realização</span><h3>Seu percurso, em tempo real.</h3><p>As respostas ficam apenas neste navegador durante a sessão. A pontuação é por acerto simples e não corresponde à nota TRI.</p></div>
-                <label className="student-name"><UserRound size={16} /><span>Nome no relatório</span><input value={studentName} onChange={(event) => setStudentName(event.target.value)} placeholder="Como quer ser identificado?" /></label>
+                <div><span className="eyebrow"><span></span> Modo de realização</span><h3>Seu percurso, em tempo real.</h3><p>As respostas e tentativas ficam apenas neste navegador. A pontuação é por acerto simples e não corresponde à nota TRI.</p></div>
+                <div className="student-profile"><label className="student-name"><UserRound size={16} /><span>Nome no relatório</span><input value={studentName} disabled={submitted || maxAttemptsReached} onChange={(event) => setStudentName(event.target.value)} placeholder="Como quer ser identificado?" /></label><label className="student-name classroom-name"><GraduationCap size={16} /><span>Turma local</span><input value={classroom} disabled={submitted || maxAttemptsReached} onChange={(event) => setClassroom(event.target.value)} placeholder="Ex.: 3.º ano A" /></label></div>
               </div>
+              <div className={`attempt-limit ${maxAttemptsReached ? "limit-reached" : ""}`}><div><span className="attempt-kicker">LIMITE DE REALIZAÇÃO</span><strong>{attemptsUsed} de {MAX_ATTEMPTS} tentativas concluídas</strong><p>{maxAttemptsReached ? "As três tentativas foram concluídas neste navegador. O ciclo de prática está encerrado." : `Você ainda pode concluir ${attemptsRemaining} ${attemptsRemaining === 1 ? "tentativa" : "tentativas"} com este identificador.`}</p></div><div className="attempt-dots" aria-label={`${attemptsUsed} de ${MAX_ATTEMPTS} tentativas utilizadas`}>{Array.from({ length: MAX_ATTEMPTS }, (_, index) => <span className={index < attemptsUsed ? "used" : ""} key={index}>{index + 1}</span>)}</div></div>
               <div className={`exam-timer ${isCriticalTime ? "critical" : ""} ${isTimeOver ? "finished" : ""}`}>
                 <div className="timer-copy"><div><Timer size={19} /><span>CRONÔMETRO DE SIMULAÇÃO</span></div><p>{isTimeOver ? "Tempo encerrado" : isCriticalTime ? "Atenção: últimos 10 minutos" : "Escolha o dia e inicie quando estiver pronto."}</p></div>
                 <div className="timer-display" aria-live="polite">{formatDuration(remainingSeconds)}</div>
-                <div className="timer-controls"><select value={timerPreset} onChange={(event) => chooseTimerPreset(event.target.value as TimerPreset)} aria-label="Selecionar duração da prova"><option value="dia1">1.º dia · 5h30</option><option value="dia2">2.º dia · 5h</option></select><button onClick={() => setTimerRunning((value) => !value)} disabled={isTimeOver} className="timer-start">{timerRunning ? <Pause size={15} /> : <Play size={15} />}{timerRunning ? "Pausar" : "Iniciar"}</button><button onClick={resetTimer} className="timer-reset" aria-label="Reiniciar cronômetro"><RotateCcw size={15} /></button></div>
+                <div className="timer-controls"><select value={timerPreset} disabled={submitted || maxAttemptsReached} onChange={(event) => chooseTimerPreset(event.target.value as TimerPreset)} aria-label="Selecionar duração da prova"><option value="dia1">1.º dia · 5h30</option><option value="dia2">2.º dia · 5h</option></select><button onClick={() => setTimerRunning((value) => !value)} disabled={isTimeOver || submitted || maxAttemptsReached} className="timer-start">{timerRunning ? <Pause size={15} /> : <Play size={15} />}{timerRunning ? "Pausar" : "Iniciar"}</button><button onClick={resetTimer} disabled={submitted || maxAttemptsReached} className="timer-reset" aria-label="Reiniciar cronômetro"><RotateCcw size={15} /></button></div>
               </div>
               <div className="live-score">
                 <div className="score-orbit" style={{ "--score": `${overallPercentage * 3.6}deg` } as React.CSSProperties}><div><strong>{overallPercentage}%</strong><span>acertos</span></div></div>
-                <div className="score-copy"><span className="mini-label">DESEMPENHO GLOBAL</span><h3>{totalCorrect} de 100 itens corretos</h3><p>{totalAnswered} respostas registradas · {100 - totalAnswered} itens em branco</p><p className="score-message">{performanceMessage}</p></div>
-                <div className="score-actions"><Button className="score-finalize" onClick={finishSimulation}><Trophy size={16} /> {submitted ? "Resultado atualizado" : "Finalizar e corrigir"}</Button><Button variant="outline" className="pdf-button" onClick={exportPdfReport} disabled={totalAnswered === 0}><FileDown size={16} /> Exportar PDF</Button></div>
+                <div className="score-copy"><span className="mini-label">DESEMPENHO GLOBAL · TENTATIVA {currentAttemptNumber}</span><h3>{totalCorrect} de 100 itens corretos</h3><p>{totalAnswered} respostas registradas · {100 - totalAnswered} itens em branco</p><p className="score-message">{maxAttemptsReached ? "Ciclo de três tentativas concluído. Consulte o acompanhamento local abaixo." : performanceMessage}</p></div>
+                <div className="score-actions"><Button className="score-finalize" onClick={finishSimulation} disabled={submitted || maxAttemptsReached || totalAnswered === 0}><Trophy size={16} /> {maxAttemptsReached ? "Ciclo concluído" : submitted ? "Resultado registrado" : "Finalizar e corrigir"}</Button><Button variant="outline" className="pdf-button" onClick={exportPdfReport} disabled={!submitted}><FileDown size={16} /> Exportar PDF</Button></div>
               </div>
               <div className="area-performance-grid">
                 {areaPerformance.map((area) => { const meta = areaMeta[area.area as AreaName]; return <div className="area-performance" key={area.area}><div><span style={{ background: meta.color }}></span><p>{area.short}<small>{area.correct}/25 acertos</small></p><strong>{area.percentage}%</strong></div><div className="performance-track"><i style={{ width: `${area.percentage}%`, background: meta.color }}></i></div><small>{area.answered} respondidas · {area.blank} em branco</small></div>; })}
               </div>
-              {submitted && <div className="result-ready"><Check size={17} /><p><strong>Correção concluída.</strong> Consulte as respostas comentadas nos itens, analise os percentuais por área e exporte seu relatório personalizado.</p></div>}
+              {submitted && <div className="result-ready"><Check size={17} /><p><strong>Resultado registrado.</strong> Consulte as respostas comentadas, analise os percentuais por área e exporte seu relatório personalizado.</p>{!maxAttemptsReached && <button onClick={beginNextAttempt}>Iniciar tentativa {attemptsUsed + 1} <ArrowRight size={14} /></button>}</div>}
+              {maxAttemptsReached && <section className="attempts-complete" id="acompanhamento"><div className="attempts-complete-heading"><div><span className="eyebrow"><span></span> Ciclo concluído</span><h3>Três tentativas, agora em <i>perspectiva.</i></h3><p>O limite é aplicado localmente ao identificador e à turma informados neste navegador. Para um acompanhamento compartilhado entre dispositivos, é necessário sincronização em servidor.</p></div><div className="complete-lock"><LockKeyhole size={20} /><span>3 / 3</span></div></div><div className="local-insights"><article className="attempt-history"><div className="insight-title"><History size={18} /><div><span>HISTÓRICO DO ESTUDANTE</span><strong>{studentName.trim() || "Estudante local"}</strong></div></div>{studentAttempts.map((attempt, index) => <div className="attempt-row" key={attempt.id}><span>{String(index + 1).padStart(2, "0")}</span><p>{new Date(attempt.createdAt).toLocaleDateString("pt-BR")}<small>{attempt.correct}/100 acertos · {attempt.answered} respondidas</small></p><strong>{attempt.percentage}%</strong></div>)}</article><article className="teacher-panel"><div className="insight-title"><UsersRound size={18} /><div><span>PAINEL DOCENTE LOCAL</span><strong>{classroom.trim() || "Turma local"}</strong></div></div><div className="teacher-metrics"><div><strong>{uniqueStudentsInClass}</strong><span>estudantes</span></div><div><strong>{classAttempts.length}</strong><span>tentativas</span></div><div><strong>{classAverage}%</strong><span>média local</span></div></div><p>Os indicadores agregam somente registros salvos neste dispositivo para a turma atual.</p></article><article className="anonymous-ranking"><div className="insight-title"><Medal size={18} /><div><span>RANKING ANÔNIMO LOCAL</span><strong>Melhor resultado por participante</strong></div></div><div className="ranking-list">{anonymousRanking.map((entry, index) => <div key={entry.label}><span>{index + 1}</span><p>{entry.label}<small>{entry.attempts} {entry.attempts === 1 ? "tentativa" : "tentativas"}</small></p><strong>{entry.best}%</strong></div>)}</div></article></div></section>}
             </section>
             <div className="filter-panel">
               <div className="filter-icon"><Filter size={18} /></div>
-              <div className="area-filters" aria-label="Filtro de áreas"><button className={activeArea === "Todas" ? "active" : ""} onClick={() => setActiveArea("Todas")}>Todas <span>100</span></button>{areaSummary.map((entry) => <button key={entry.area} className={activeArea === entry.area ? "active" : ""} onClick={() => setActiveArea(entry.area as AreaName)}>{entry.short} <span>{entry.count}</span></button>)}</div>
+              <div className="area-filters" aria-label="Filtro de áreas"><button className={activeArea === "Todas" ? "active" : ""} onClick={() => setActiveArea("Todas")}>Todas <span>100</span></button>{areaSummary.map((entry) => <button key={entry.area} style={{ "--filter-color": areaMeta[entry.area as AreaName].color, "--filter-pale": areaMeta[entry.area as AreaName].pale } as React.CSSProperties} className={activeArea === entry.area ? "active" : ""} onClick={() => setActiveArea(entry.area as AreaName)}>{entry.short} <span>{entry.count}</span></button>)}</div>
               <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar tema ou habilidade" /></label>
             </div>
             <div className="results-bar"><p><strong>{filteredQuestions.length}</strong> itens encontrados {activeArea !== "Todas" && <>em <strong>{areaMeta[activeArea].short}</strong></>}</p><span>Página {page} de {totalPages}</span></div>
             <div className="questions-stack">
-              {currentQuestions.length ? currentQuestions.map((q) => <QuestionCard key={q.numero} q={q} selected={answers[q.numero]} onSelect={(answer) => setAnswer(q.numero, answer)} revealed={revealed.has(q.numero)} onReveal={() => reveal(q.numero)} canReveal={submitted} />) : <div className="empty-state"><Search size={25} /><h3>Nenhum item encontrado</h3><p>Tente outro termo de busca ou selecione todas as áreas.</p></div>}
+              {currentQuestions.length ? currentQuestions.map((q) => <QuestionCard key={q.numero} q={q} selected={answers[q.numero]} onSelect={(answer) => setAnswer(q.numero, answer)} revealed={revealed.has(q.numero)} onReveal={() => reveal(q.numero)} canReveal={submitted} disabled={submitted || maxAttemptsReached} />) : <div className="empty-state"><Search size={25} /><h3>Nenhum item encontrado</h3><p>Tente outro termo de busca ou selecione todas as áreas.</p></div>}
             </div>
             {filteredQuestions.length > pageSize && <div className="pagination"><button disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={17} /> Anterior</button><div>{Array.from({ length: totalPages }, (_, index) => <button key={index} className={page === index + 1 ? "current" : ""} onClick={() => setPage(index + 1)}>{index + 1}</button>)}</div><button disabled={page === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Próxima <ChevronRight size={17} /></button></div>}
           </div>

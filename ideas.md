@@ -66,3 +66,7 @@ O símbolo é uma página aberta formada por dois arcos assimétricos, cortada p
 ### Cor de marca
 
 **Vermelho Caderno — #C84D3A**
+
+## Style Decisions
+
+O sistema de régua vertical, numeração, filetes em azul-marinho e metadados editoriais deve atravessar inclusive as áreas funcionais do simulador. Controles, cartões de questões e métricas devem manter aparência de caderno docente imprimível, com papel pautado, marcadores de área, círculos de correção e traços pontuais. A marca com símbolo de página aberta, verificação e sublinhado vermelho em “ENEM” deve ter presença reconhecível no cabeçalho e no rodapé.
