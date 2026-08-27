@@ -33,3 +33,5 @@
 - [x] Exibir uma confirmação para o professor antes de abrir a janela de impressão do caderno.
 - [x] Permitir a exportação direta do caderno em PDF no painel do professor desenvolvedor.
 - [x] Executar um simulado de teste com respostas controladas e verificar a correção global e por área.
+- [x] Permitir que o professor selecione blocos de questões antes de imprimir ou exportar o caderno.
+- [x] Exibir uma pré-visualização do conteúdo e da paginação selecionados no modal de confirmação.

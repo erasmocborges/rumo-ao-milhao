@@ -51,12 +51,13 @@ import { questions, areaSummary, type Question } from "@/data/simulado";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { loadRemoteProgress, saveRemoteProgress } from "@/lib/progressApi";
 import { hasInstitutionalTeacherAccess } from "@shared/identityRoles";
-import { cadernoPdfFilename, paginateCadernoForPrint } from "@shared/cadernoPrint";
+import { cadernoPdfFilename, paginateCadernoForPrint, selectCadernoPrintBlocks, type CadernoPrintBlock } from "@shared/cadernoPrint";
 import { calculateSimulationScore } from "@shared/simulationScoring";
 
 type AreaName = (typeof questions)[number]["area"];
 type FilterArea = AreaName | "Todas";
 type DownloadMode = "caderno" | "gabarito" | "mascara";
+type CadernoOutputMode = "print" | "pdf";
 type AttemptArea = { short: string; correct: number; answered: number; blank: number; percentage: number };
 type Attempt = {
   id: string;
@@ -99,6 +100,10 @@ const MAX_ATTEMPTS = 3;
 const ATTEMPTS_STORAGE_KEY = "simulado-enem-attempts-v1";
 const PROFILE_STORAGE_KEY = "simulado-enem-profile-v1";
 const PROGRESS_STORAGE_KEY = "simulado-enem-progress-v1";
+const CADERNO_PRINT_BLOCKS: Array<CadernoPrintBlock & { label: string; description: string }> = [
+  { id: "dia-1", startQuestion: 1, endQuestion: 50, label: "Bloco 1 · Linguagens e Humanas", description: "Questões 01–50 · aplicação do 1.º dia" },
+  { id: "dia-2", startQuestion: 51, endQuestion: 100, label: "Bloco 2 · Natureza e Matemática", description: "Questões 51–100 · aplicação do 2.º dia" },
+];
 
 function normalizeIdentity(value: string, fallback: string) {
   return (value.trim() || fallback)
@@ -177,8 +182,8 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] || character);
 }
 
-function printableCadernoHtml() {
-  const pages = paginateCadernoForPrint(questions);
+function printableCadernoHtml(selectedQuestions: readonly Question[], selectionLabel: string) {
+  const pages = paginateCadernoForPrint(selectedQuestions);
   return pages.map((page, pageIndex) => {
     const questionHtml = page.map((question) => `
       <article class="print-question">
@@ -189,14 +194,15 @@ function printableCadernoHtml() {
         </ol>
       </article>`).join("");
     const identification = pageIndex === 0 ? `<div class="print-identification"><span>Escola: ______________________________________________</span><span>Professor(a): ________________________________________</span><span>Estudante: __________________________________________</span><span>Turma: ____________________ Data: ____ / ____ / ______</span></div>` : "";
-    return `<section class="print-page"><header class="print-page-header"><span>SIMULADO ENEM INTERATIVO</span><strong>Caderno de questões</strong><span>Folha ${String(pageIndex + 1).padStart(2, "0")} de ${String(pages.length).padStart(2, "0")}</span></header>${identification}${questionHtml}<footer class="print-page-footer"><span>Material autoral reformulado para aplicação pedagógica.</span><span>${pageIndex + 1} / ${pages.length}</span></footer></section>`;
+    return `<section class="print-page"><header class="print-page-header"><span>SIMULADO ENEM INTERATIVO</span><strong>Caderno de questões</strong><span>Folha ${String(pageIndex + 1).padStart(2, "0")} de ${String(pages.length).padStart(2, "0")}</span></header><p class="print-selection">${escapeHtml(selectionLabel)}</p>${identification}${questionHtml}<footer class="print-page-footer"><span>Material autoral reformulado para aplicação pedagógica.</span><span>${pageIndex + 1} / ${pages.length}</span></footer></section>`;
   }).join("");
 }
 
-function printPreview() {
+function printPreview(selectedQuestions: readonly Question[], selectionLabel: string) {
+  if (!selectedQuestions.length) return false;
   const printWindow = window.open("", "_blank", "noopener,noreferrer");
   if (!printWindow) return false;
-  printWindow.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Simulado ENEM — Caderno</title><style>@page{size:A4;margin:12mm 14mm}*{box-sizing:border-box}body{margin:0;background:#eef0f2;color:#182940;font-family:Arial,sans-serif}.print-page{position:relative;min-height:273mm;overflow:hidden;background:#fff;padding:0 0 15mm;page-break-after:always;break-after:page}.print-page:last-child{page-break-after:auto;break-after:auto}.print-page-header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:9mm;border-top:3px solid #c84d3a;border-bottom:1px solid #cdd4db;padding:3mm 0 3.4mm;color:#546477;font-size:7.5pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.print-page-header strong{color:#1d2a44;font-size:9pt;letter-spacing:.025em;text-transform:none}.print-page-header span:last-child{text-align:right}.print-identification{display:grid;grid-template-columns:1fr 1fr;gap:3.3mm 8mm;margin:5mm 0 4mm;border:1px solid #d6dce0;padding:3.5mm 4mm;color:#3f5066;font-size:8.2pt;line-height:1.25}.print-question{break-inside:avoid;page-break-inside:avoid;padding:4.5mm 0 4.3mm;border-bottom:1px solid #dce1e5}.print-question-meta{display:flex;justify-content:space-between;gap:7mm;color:#6a7888;font-size:7.5pt;text-transform:uppercase;letter-spacing:.075em}.print-question-meta strong{color:#c84d3a;font-size:9.4pt;letter-spacing:.03em}.print-stem{margin:2.2mm 0 2.6mm;color:#1d2a44;font-size:9.8pt;line-height:1.4}.print-alternatives{display:grid;grid-template-columns:1fr 1fr;gap:1.6mm 8mm;margin:0;padding-left:5mm;color:#33455a;font-size:8.9pt;line-height:1.35}.print-alternatives li{padding-left:1mm}.print-page-footer{position:absolute;right:0;bottom:0;left:0;display:flex;justify-content:space-between;border-top:1px solid #d6dce0;padding-top:2.5mm;color:#718092;font-size:7.2pt}@media screen{body{padding:16px}.print-page{width:182mm;min-height:273mm;margin:0 auto 16px;padding:12mm 14mm 15mm;box-shadow:0 5px 18px rgba(22,37,55,.16)}}@media print{body{background:#fff}.print-page{width:auto;margin:0;padding:0 0 15mm;box-shadow:none}}</style></head><body>${printableCadernoHtml()}</body></html>`);
+  printWindow.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Simulado ENEM — Caderno</title><style>@page{size:A4;margin:12mm 14mm}*{box-sizing:border-box}body{margin:0;background:#eef0f2;color:#182940;font-family:Arial,sans-serif}.print-page{position:relative;min-height:273mm;overflow:hidden;background:#fff;padding:0 0 15mm;page-break-after:always;break-after:page}.print-page:last-child{page-break-after:auto;break-after:auto}.print-page-header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:9mm;border-top:3px solid #c84d3a;border-bottom:1px solid #cdd4db;padding:3mm 0 3.4mm;color:#546477;font-size:7.5pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.print-page-header strong{color:#1d2a44;font-size:9pt;letter-spacing:.025em;text-transform:none}.print-page-header span:last-child{text-align:right}.print-selection{margin:3mm 0 0;color:#6a7888;font-size:7.5pt;font-weight:700;letter-spacing:.05em;text-transform:uppercase}.print-identification{display:grid;grid-template-columns:1fr 1fr;gap:3.3mm 8mm;margin:5mm 0 4mm;border:1px solid #d6dce0;padding:3.5mm 4mm;color:#3f5066;font-size:8.2pt;line-height:1.25}.print-question{break-inside:avoid;page-break-inside:avoid;padding:4.5mm 0 4.3mm;border-bottom:1px solid #dce1e5}.print-question-meta{display:flex;justify-content:space-between;gap:7mm;color:#6a7888;font-size:7.5pt;text-transform:uppercase;letter-spacing:.075em}.print-question-meta strong{color:#c84d3a;font-size:9.4pt;letter-spacing:.03em}.print-stem{margin:2.2mm 0 2.6mm;color:#1d2a44;font-size:9.8pt;line-height:1.4}.print-alternatives{display:grid;grid-template-columns:1fr 1fr;gap:1.6mm 8mm;margin:0;padding-left:5mm;color:#33455a;font-size:8.9pt;line-height:1.35}.print-alternatives li{padding-left:1mm}.print-page-footer{position:absolute;right:0;bottom:0;left:0;display:flex;justify-content:space-between;border-top:1px solid #d6dce0;padding-top:2.5mm;color:#718092;font-size:7.2pt}@media screen{body{padding:16px}.print-page{width:182mm;min-height:273mm;margin:0 auto 16px;padding:12mm 14mm 15mm;box-shadow:0 5px 18px rgba(22,37,55,.16)}}@media print{body{background:#fff}.print-page{width:auto;margin:0;padding:0 0 15mm;box-shadow:none}}</style></head><body>${printableCadernoHtml(selectedQuestions, selectionLabel)}</body></html>`);
   printWindow.document.close();
   printWindow.focus();
   window.setTimeout(() => printWindow.print(), 300);
@@ -263,6 +269,8 @@ export default function Home() {
   const [syncState, setSyncState] = useState<"local" | "syncing" | "cloud" | "error">("local");
   const [remotePayload, setRemotePayload] = useState<string | null>(null);
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [cadernoOutputMode, setCadernoOutputMode] = useState<CadernoOutputMode>("print");
+  const [selectedCadernoBlocks, setSelectedCadernoBlocks] = useState<string[]>(() => CADERNO_PRINT_BLOCKS.map((block) => block.id));
   const teacherMode = hasInstitutionalTeacherAccess(user);
   const openAuth = (mode: "login" | "signup") => {
     setAuthInitialMode(mode);
@@ -344,6 +352,9 @@ export default function Home() {
   }, [remotePayload]);
 
   const simulationScore = useMemo(() => calculateSimulationScore(questions, answers), [answers]);
+  const selectedCadernoQuestions = useMemo(() => selectCadernoPrintBlocks(questions, CADERNO_PRINT_BLOCKS, selectedCadernoBlocks), [selectedCadernoBlocks]);
+  const selectedCadernoPages = useMemo(() => paginateCadernoForPrint(selectedCadernoQuestions), [selectedCadernoQuestions]);
+  const selectedCadernoLabel = useMemo(() => CADERNO_PRINT_BLOCKS.filter((block) => selectedCadernoBlocks.includes(block.id)).map((block) => block.label.replace("Bloco ", "B.")).join(" · "), [selectedCadernoBlocks]);
   const areaPerformance = simulationScore.byArea;
   const totalAnswered = simulationScore.answered;
   const totalCorrect = simulationScore.correct;
@@ -546,7 +557,8 @@ export default function Home() {
     const safeName = reportName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "estudante";
     doc.save(`resultado-simulado-enem-${safeName}.pdf`);
   };
-  const exportCadernoPdf = () => {
+  const exportCadernoPdf = (cadernoQuestions: readonly Question[], selectionLabel: string) => {
+    if (!cadernoQuestions.length) return;
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -562,7 +574,7 @@ export default function Home() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
       doc.text("Material autoral reformulado para aplicação pedagógica", 15, 18);
-      doc.text(`Folha ${String(page).padStart(2, "0")}`, pageWidth - 15, 18, { align: "right" });
+      doc.text(`${selectionLabel} · Folha ${String(page).padStart(2, "0")}`, pageWidth - 15, 18, { align: "right" });
       doc.setTextColor(29, 42, 68);
     };
     const drawFooter = (pageNumber: number) => {
@@ -580,7 +592,7 @@ export default function Home() {
     doc.setFontSize(8.5);
     doc.text(["Escola: ______________________________________________", "Professor(a): ________________________________________", "Estudante: __________________________________________", "Turma: ____________________    Data: ____ / ____ / ______"], 15, y, { lineHeightFactor: 1.55 });
     y += 27;
-    questions.forEach((question) => {
+    cadernoQuestions.forEach((question) => {
       const questionLines = doc.splitTextToSize(question.enunciado, pageWidth - 30) as string[];
       const alternativeLines = (["A", "B", "C", "D"] as const).flatMap((letter) => doc.splitTextToSize(`${letter}. ${question.alternativas[letter]}`, pageWidth - 38) as string[]);
       const requiredHeight = 12 + questionLines.length * 4.4 + alternativeLines.length * 3.8;
@@ -612,9 +624,15 @@ export default function Home() {
     for (let pageNumber = 1; pageNumber <= pages; pageNumber += 1) { doc.setPage(pageNumber); drawFooter(pageNumber); }
     doc.save(cadernoPdfFilename());
   };
-  const requestCadernoPrint = () => setPrintDialogOpen(true);
-  const confirmCadernoPrint = () => {
-    printPreview();
+  const toggleCadernoBlock = (blockId: string) => setSelectedCadernoBlocks((current) => current.includes(blockId) ? current.filter((id) => id !== blockId) : [...current, blockId]);
+  const requestCadernoOutput = (outputMode: CadernoOutputMode) => {
+    setCadernoOutputMode(outputMode);
+    setPrintDialogOpen(true);
+  };
+  const confirmCadernoOutput = () => {
+    if (!selectedCadernoQuestions.length) return;
+    if (cadernoOutputMode === "pdf") exportCadernoPdf(selectedCadernoQuestions, selectedCadernoLabel);
+    else printPreview(selectedCadernoQuestions, selectedCadernoLabel);
     setPrintDialogOpen(false);
   };
 
@@ -636,16 +654,18 @@ export default function Home() {
         <div className="top-actions">
           {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => void logout()}>Sair da conta</button></> : <button className="top-timer" onClick={() => openAuth("login")}>Acesso aluno</button>)}
           <button className={`top-timer ${isCriticalTime ? "critical" : ""}`} onClick={() => scrollToSection("questoes")} aria-label="Ir para o cronômetro"><Timer size={15} /><span>{formatDuration(remainingSeconds)}</span></button>
-          {teacherMode && <Button className="print-button" onClick={requestCadernoPrint}><Printer size={16} /> Imprimir caderno</Button>}
+          {teacherMode && <Button className="print-button" onClick={() => requestCadernoOutput("print")}><Printer size={16} /> Imprimir caderno</Button>}
           <button className="menu-button" aria-label="Abrir menu" onClick={() => setMenuOpen((value) => !value)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
       </header>
 
       <StudentAuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode={authInitialMode} onLogin={login} onSignup={signup} onRecover={recover} requiresPasswordReset={requiresPasswordReset} onCompletePasswordRecovery={completePasswordRecovery} />
       <AlertDialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
-        <AlertDialogContent className="border-[#D8D0C3] bg-[#FDFBF6] text-[#1D2A44] sm:max-w-md">
-          <AlertDialogHeader><AlertDialogTitle className="font-serif text-2xl">Abrir caderno para impressão?</AlertDialogTitle><AlertDialogDescription className="text-[#5B697A]">O caderno será aberto em uma janela preparada para papel A4, com cabeçalho, rodapé e quatro questões por folha.</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className="bg-[#1D2A44] text-white hover:bg-[#2B4164]" onClick={confirmCadernoPrint}><Printer size={15} /> Abrir impressão</AlertDialogAction></AlertDialogFooter>
+        <AlertDialogContent className="max-h-[90vh] overflow-y-auto border-[#D8D0C3] bg-[#FDFBF6] text-[#1D2A44] sm:max-w-3xl">
+          <AlertDialogHeader><AlertDialogTitle className="font-serif text-2xl">Preparar caderno docente</AlertDialogTitle><AlertDialogDescription className="text-[#5B697A]">Escolha os blocos e revise a paginação A4 antes de {cadernoOutputMode === "pdf" ? "gerar o PDF" : "abrir a impressão"}.</AlertDialogDescription></AlertDialogHeader>
+          <section className="mt-1 border-y border-[#DED6C8] py-4" aria-labelledby="blocos-caderno"><div className="mb-3 flex items-end justify-between gap-4"><div><h3 id="blocos-caderno" className="text-sm font-extrabold text-[#1D2A44]">Blocos de aplicação</h3><p className="mt-1 text-xs text-[#657083]">Cada bloco reúne 50 questões. Você pode combinar os dois ou aplicar apenas um dia.</p></div><span className="shrink-0 text-xs font-bold text-[#C84D3A]">{selectedCadernoQuestions.length} itens</span></div><div className="grid gap-2 sm:grid-cols-2">{CADERNO_PRINT_BLOCKS.map((block) => { const selected = selectedCadernoBlocks.includes(block.id); return <label key={block.id} className={`cursor-pointer border p-3 transition-colors ${selected ? "border-[#1D2A44] bg-[#EEF2F4]" : "border-[#D8D0C3] bg-white"}`}><input type="checkbox" className="sr-only" checked={selected} onChange={() => toggleCadernoBlock(block.id)} /><span className="flex items-start gap-2"><span className={`mt-0.5 grid h-4 w-4 place-items-center border text-[10px] ${selected ? "border-[#1D2A44] bg-[#1D2A44] text-white" : "border-[#AEB7BD] bg-white text-transparent"}`}><Check size={11} /></span><span><strong className="block text-xs text-[#1D2A44]">{block.label}</strong><span className="mt-1 block text-[11px] leading-snug text-[#657083]">{block.description}</span></span></span></label>; })}</div></section>
+          <section className="mt-4" aria-labelledby="previa-caderno"><div className="flex items-end justify-between gap-4"><div><h3 id="previa-caderno" className="text-sm font-extrabold text-[#1D2A44]">Pré-visualização da impressão</h3><p className="mt-1 text-xs text-[#657083]">A paginação usa até quatro questões por folha, com cabeçalho, rodapé e identificação.</p></div><span className="shrink-0 text-xs font-bold text-[#497464]">{selectedCadernoPages.length} {selectedCadernoPages.length === 1 ? "folha" : "folhas"}</span></div>{selectedCadernoPages.length ? <div className="mt-3 grid max-h-48 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">{selectedCadernoPages.map((previewPage, index) => <article className="min-h-28 border border-[#D8D0C3] bg-white p-3 shadow-[3px_3px_0_#E7E0D5]" key={`${previewPage[0]?.numero}-${index}`}><div className="flex justify-between border-b border-[#E4DCD0] pb-1 text-[9px] font-extrabold uppercase tracking-wider text-[#697483]"><span>Folha {String(index + 1).padStart(2, "0")}</span><span>{previewPage.length} itens</span></div><ol className="mt-2 grid gap-1 text-[10px] leading-snug text-[#3F5066]">{previewPage.map((question) => <li key={question.numero}><strong className="text-[#C84D3A]">{String(question.numero).padStart(2, "0")}</strong> · {question.areaCurta}</li>)}</ol></article>)}</div> : <p className="mt-3 border border-dashed border-[#C84D3A] bg-[#FCE8E3] p-3 text-xs text-[#8B3529]">Selecione pelo menos um bloco para continuar.</p>}</section>
+          <AlertDialogFooter className="mt-5"><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction disabled={!selectedCadernoQuestions.length} className="bg-[#1D2A44] text-white hover:bg-[#2B4164] disabled:cursor-not-allowed disabled:opacity-50" onClick={confirmCadernoOutput}>{cadernoOutputMode === "pdf" ? <><FileDown size={15} /> Gerar PDF</> : <><Printer size={15} /> Abrir impressão</>}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
@@ -740,7 +760,7 @@ export default function Home() {
             <div className="question-header">
               <div><span className="eyebrow"><span></span> Leitura ativa</span><h2>Banco de questões<br /><i>para explorar.</i></h2></div>
               <span className="workbook-note">folha de aplicação<br />marque uma opção</span>
-              <div className="question-actions"><Button variant="outline" className="download-outline" onClick={() => downloadFile("caderno")}><ArrowDownToLine size={16} /> Baixar caderno</Button>{teacherMode && <Button className="print-button" onClick={requestCadernoPrint}><Printer size={16} /> Imprimir</Button>}</div>
+              <div className="question-actions"><Button variant="outline" className="download-outline" onClick={() => downloadFile("caderno")}><ArrowDownToLine size={16} /> Baixar caderno</Button>{teacherMode && <Button className="print-button" onClick={() => requestCadernoOutput("print")}><Printer size={16} /> Imprimir</Button>}</div>
             </div>
             <section className="student-dashboard" id="resultado" aria-label="Painel de desempenho do estudante">
               <span className="workbook-folio">FOLHA 01 · APLICAÇÃO E ACOMPANHAMENTO</span>
@@ -780,7 +800,7 @@ export default function Home() {
         </section>
 
         {teacherMode && <section className="correction-section" id="correcao">
-          <div className="correction-copy"><span className="eyebrow light"><span></span> Correção organizada</span><h2>Do cartão-resposta<br />à <i>próxima aula.</i></h2><p>Use a máscara com as quatro alternativas, consulte o gabarito comentado e prepare o caderno para aplicação com paginação A4.</p><div className="correction-buttons"><Button onClick={requestCadernoPrint}><Printer size={16} /> Imprimir caderno</Button><Button variant="outline" className="light-outline" onClick={exportCadernoPdf}><FileDown size={16} /> Exportar caderno PDF</Button><Button variant="outline" className="light-outline" onClick={() => downloadFile("mascara")}><ArrowDownToLine size={16} /> Baixar máscara</Button><Button variant="outline" className="light-outline" onClick={() => downloadFile("gabarito")}><BookOpenCheck size={16} /> Baixar gabarito</Button></div></div>
+          <div className="correction-copy"><span className="eyebrow light"><span></span> Correção organizada</span><h2>Do cartão-resposta<br />à <i>próxima aula.</i></h2><p>Escolha o bloco de aplicação, revise a pré-visualização e gere a versão A4 adequada para a turma.</p><div className="correction-buttons"><Button onClick={() => requestCadernoOutput("print")}><Printer size={16} /> Imprimir caderno</Button><Button variant="outline" className="light-outline" onClick={() => requestCadernoOutput("pdf")}><FileDown size={16} /> Exportar caderno PDF</Button><Button variant="outline" className="light-outline" onClick={() => downloadFile("mascara")}><ArrowDownToLine size={16} /> Baixar máscara</Button><Button variant="outline" className="light-outline" onClick={() => downloadFile("gabarito")}><BookOpenCheck size={16} /> Baixar gabarito</Button></div></div>
           <div className="correction-card"><img src="/manus-storage/enem-correction-detail_08ac5859.jpg" alt="Detalhe de uma folha de respostas sendo corrigida" /><div className="correction-card-body"><div><ClipboardCheck size={21} /><span>CHAVE DOCENTE</span></div><h3>100 respostas<br />em uma única matriz.</h3><button onClick={() => setShowKey((value) => !value)}>{showKey ? "Ocultar chave" : "Consultar chave"} <ArrowRight size={16} /></button></div></div>
           {showKey && <div className="answer-key" aria-live="polite"><div className="answer-key-title"><div><span className="mini-label">GABARITO RÁPIDO</span><h3>Chave de correção</h3></div><button onClick={() => setShowKey(false)} aria-label="Fechar chave"><X size={17} /></button></div><div className="answer-key-grid">{questions.map((q) => <div key={q.numero}><span>{String(q.numero).padStart(3, "0")}</span><strong>{q.correta}</strong></div>)}</div></div>}
           <div className="answer-key"><div className="answer-key-title"><div><span className="mini-label">PAINEL DOCENTE</span><h3>Resultados locais</h3></div><div><select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="todas">Todas as turmas</option>{teacherClassrooms.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select><select value={teacherSort} onChange={(event) => setTeacherSort(event.target.value)}><option value="score">Maior pontuação</option><option value="date">Mais recente</option></select></div></div><div className="answer-key-grid">{teacherRows.map((attempt) => <div key={attempt.id}><span>{attempt.studentName} · {attempt.classroom}</span><strong>{attempt.percentage}%</strong></div>)}</div></div>

@@ -1,3 +1,9 @@
+export type CadernoPrintBlock = {
+  id: string;
+  startQuestion: number;
+  endQuestion: number;
+};
+
 export const CADERNO_PRINT_QUESTIONS_PER_PAGE = 4;
 
 export function paginateCadernoForPrint<T>(items: readonly T[], itemsPerPage = CADERNO_PRINT_QUESTIONS_PER_PAGE): T[][] {
@@ -10,6 +16,11 @@ export function paginateCadernoForPrint<T>(items: readonly T[], itemsPerPage = C
     pages.push([...items.slice(index, index + itemsPerPage)]);
   }
   return pages;
+}
+
+export function selectCadernoPrintBlocks<T extends { numero: number }>(items: readonly T[], blocks: readonly CadernoPrintBlock[], selectedBlockIds: readonly string[]): T[] {
+  const selected = new Set(selectedBlockIds);
+  return items.filter((item) => blocks.some((block) => selected.has(block.id) && item.numero >= block.startQuestion && item.numero <= block.endQuestion));
 }
 
 export function cadernoPdfFilename(date = new Date()): string {

@@ -1,14 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { cadernoPdfFilename, paginateCadernoForPrint } from "../shared/cadernoPrint";
+import { cadernoPdfFilename, paginateCadernoForPrint, selectCadernoPrintBlocks, type CadernoPrintBlock } from "../shared/cadernoPrint";
 import { calculateSimulationScore } from "../shared/simulationScoring";
 import { questions } from "../client/src/data/simulado";
 
 describe("materiais docentes do caderno", () => {
+  const blocks: CadernoPrintBlock[] = [
+    { id: "dia-1", startQuestion: 1, endQuestion: 50 },
+    { id: "dia-2", startQuestion: 51, endQuestion: 100 },
+  ];
+
   it("organiza as 100 questões em 25 páginas de quatro itens para impressão", () => {
     const pages = paginateCadernoForPrint(questions);
     expect(pages).toHaveLength(25);
     expect(pages.every((page) => page.length === 4)).toBe(true);
     expect(pages.flat().map((question) => question.numero)).toEqual(questions.map((question) => question.numero));
+  });
+
+  it("seleciona somente os blocos solicitados e preserva a ordem das questões", () => {
+    const secondBlock = selectCadernoPrintBlocks(questions, blocks, ["dia-2"]);
+    expect(secondBlock).toHaveLength(50);
+    expect(secondBlock[0]?.numero).toBe(51);
+    expect(secondBlock.at(-1)?.numero).toBe(100);
+    expect(paginateCadernoForPrint(secondBlock)).toHaveLength(13);
   });
 
   it("monta um nome de PDF estável e identificável", () => {
