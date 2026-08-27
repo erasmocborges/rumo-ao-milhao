@@ -93,7 +93,7 @@ export async function getSimulatorProgress(userId: number) {
   const db = await getDb();
   if (!db) return undefined;
   const rows = await db.select().from(simulatorProgress).where(eq(simulatorProgress.userId, userId)).limit(1);
-  return rows[0];
+  return rows[0] ?? null;
 }
 
 export async function saveSimulatorProgress(userId: number, payload: string) {
