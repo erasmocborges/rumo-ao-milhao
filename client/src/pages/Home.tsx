@@ -550,10 +550,9 @@ export default function Home() {
           <button onClick={() => { scrollToSection("fontes"); setMenuOpen(false); }}>Fontes</button>
         </nav>
         <div className="top-actions">
-          {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => void logout()}>Sair · {user?.name || user?.email || "Conta"}</button></> : <button className="top-timer" onClick={() => openAuth("login")}>Entrar para sincronizar</button>)}
-          {teacherMode ? <span className="top-timer">Modo docente</span> : <button className="top-timer" onClick={() => scrollToSection("acesso-docente")}>Acesso docente</button>}
+          {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => void logout()}>Sair da conta</button></> : <button className="top-timer" onClick={() => openAuth("login")}>Acesso aluno</button>)}
           <button className={`top-timer ${isCriticalTime ? "critical" : ""}`} onClick={() => scrollToSection("questoes")} aria-label="Ir para o cronômetro"><Timer size={15} /><span>{formatDuration(remainingSeconds)}</span></button>
-          <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir caderno</Button>
+          {teacherMode && <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir caderno</Button>}
           <button className="menu-button" aria-label="Abrir menu" onClick={() => setMenuOpen((value) => !value)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
       </header>
@@ -651,7 +650,7 @@ export default function Home() {
             <div className="question-header">
               <div><span className="eyebrow"><span></span> Leitura ativa</span><h2>Banco de questões<br /><i>para explorar.</i></h2></div>
               <span className="workbook-note">folha de aplicação<br />marque uma opção</span>
-              <div className="question-actions"><Button variant="outline" className="download-outline" onClick={() => downloadFile("caderno")}><ArrowDownToLine size={16} /> Baixar caderno</Button><Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir</Button></div>
+              <div className="question-actions"><Button variant="outline" className="download-outline" onClick={() => downloadFile("caderno")}><ArrowDownToLine size={16} /> Baixar caderno</Button>{teacherMode && <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir</Button>}</div>
             </div>
             <section className="student-dashboard" id="resultado" aria-label="Painel de desempenho do estudante">
               <span className="workbook-folio">FOLHA 01 · APLICAÇÃO E ACOMPANHAMENTO</span>
@@ -697,8 +696,6 @@ export default function Home() {
           <div className="answer-key"><div className="answer-key-title"><div><span className="mini-label">PAINEL DOCENTE</span><h3>Resultados locais</h3></div><div><select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="todas">Todas as turmas</option>{teacherClassrooms.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select><select value={teacherSort} onChange={(event) => setTeacherSort(event.target.value)}><option value="score">Maior pontuação</option><option value="date">Mais recente</option></select></div></div><div className="answer-key-grid">{teacherRows.map((attempt) => <div key={attempt.id}><span>{attempt.studentName} · {attempt.classroom}</span><strong>{attempt.percentage}%</strong></div>)}</div></div>
         </section>}
 
-        {!teacherMode && <section className="sources-section" id="acesso-docente"><div className="sources-title"><span className="eyebrow"><span></span> Área restrita</span><h2>Acesso<br /><i>docente.</i></h2></div><div className="sources-list"><div className="disclaimer"><LockKeyhole size={17} /><p><strong>Materiais de correção protegidos por conta institucional autorizada.</strong> Máscara, gabarito e chave ficam disponíveis exclusivamente para <strong>erasmo.borges@escola.pr.gov.br</strong>, após a atribuição do perfil docente.</p></div>{isAuthenticated ? <p className="text-sm leading-6 text-[#435064]">Esta conta não é a credencial docente autorizada. Entre com <strong>erasmo.borges@escola.pr.gov.br</strong> para acessar a área restrita.</p> : <Button className="print-button" onClick={() => openAuth("signup")}>Criar acesso docente institucional</Button>}</div></section>}
-
         <section className="sources-section" id="fontes">
           <div className="sources-title"><span className="eyebrow"><span></span> Transparência editorial</span><h2>Fontes e<br /><i>delimitação.</i></h2></div>
           <div className="sources-list">
@@ -711,7 +708,7 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="footer"><div className="footer-brand"><img src="/manus-storage/enem-logo-symbol_049e20d0.png" alt="" /><span><strong>SIMULADO</strong><em>ENEM</em></span></div><p>Preparado para revisão, aplicação e correção em contexto escolar.</p><a href="#inicio">Voltar ao topo ↑</a></footer>
+      <footer className="footer"><div className="footer-brand"><img src="/manus-storage/enem-logo-symbol_049e20d0.png" alt="" /><span><strong>SIMULADO</strong><em>ENEM</em></span></div><p>Preparado para revisão, aplicação e correção em contexto escolar.</p>{!teacherMode && <button className="teacher-developer-access" onClick={() => openAuth("login")}><LockKeyhole size={13} /> Acesso ao professor desenvolvedor</button>}<a href="#inicio">Voltar ao topo ↑</a></footer>
     </div>
   );
 }

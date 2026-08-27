@@ -20,8 +20,12 @@
 - [x] Restringir a interface docente ao papel autorizado e ao domínio institucional `@escola.pr.gov.br`; o papel anterior não institucional foi removido.
 - [ ] Criar a conta Identity institucional e atribuir-lhe o papel docente para validar a proteção no domínio publicado.
 - [ ] Diagnosticar e corrigir a falha genérica exibida no envio do formulário de cadastro ou login institucional.
-- [ ] Limitar o modo docente exclusivamente à conta `erasmo.borges@escola.pr.gov.br` e remover autorizações docentes de outras contas.
+- [x] Limitar o modo docente exclusivamente à conta `erasmo.borges@escola.pr.gov.br` e remover autorizações docentes de outras contas.
 - [ ] Capturar o código e a mensagem de erro do cadastro com a conta institucional, sem registrar credenciais.
 - [x] Confirmar que o endpoint público de cadastro do Netlify Identity responde com sucesso em uma verificação técnica controlada.
+- [x] Validar com conta técnica que o login publicado conclui a sessão e exibe o estado de sincronização na nuvem.
 - [x] Tornar a mensagem de autenticação específica para conta já existente, senha inválida, limite de tentativas e indisponibilidade do serviço.
 - [x] Validar localmente formato de e-mail e tamanho mínimo de senha antes de enviar o formulário ao Netlify Identity.
+- [x] Ocultar o e-mail docente da interface pública, renomear o acesso do cabeçalho para aluno e criar o acesso discreto ao professor desenvolvedor no fim da página.
+- [x] Corrigir o cabeçalho móvel para ocultar o botão de impressão e manter os controles de acesso legíveis sem overflow.
+- [x] Restringir a impressão do caderno ao professor desenvolvedor autorizado, removendo esses controles da experiência de aluno.
