@@ -21,7 +21,7 @@ type StudentAuthDialogProps = {
 
 function readableError(error: unknown) {
   const status = typeof error === "object" && error && "status" in error ? (error as { status?: number }).status : undefined;
-  if (status === 401 || status === 422) return "E-mail ou senha não reconhecidos. Confira os dados e tente novamente.";
+  if (status === 400 || status === 401 || status === 422) return "Não foi possível entrar com estes dados. Se este é seu primeiro acesso, clique em “Criar conta” e confirme o e-mail antes de tentar novamente.";
   return "Não foi possível concluir o acesso agora. Tente novamente em alguns instantes.";
 }
 
@@ -66,7 +66,7 @@ export function StudentAuthDialog({ open, onOpenChange, onLogin, onSignup, onRec
 
   const title = mode === "login" ? "Entrar para sincronizar" : mode === "signup" ? "Criar conta de estudante" : "Recuperar acesso";
   const description = mode === "login"
-    ? "Use sua conta para continuar o simulado em outro dispositivo."
+    ? "Use a conta criada nesta página — ela é independente do acesso administrativo ao Netlify."
     : mode === "signup"
       ? "Uma conta permite salvar respostas e histórico de tentativas com segurança."
       : "Informe o e-mail associado à sua conta para receber as instruções.";

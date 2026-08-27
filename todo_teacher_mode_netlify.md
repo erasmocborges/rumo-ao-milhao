@@ -10,3 +10,6 @@
 - [x] Migrar o login do aluno do OAuth legado para o Netlify Identity e proteger materiais docentes por papel de usuário.
 - [x] Ativar o Netlify Identity, configurar Functions/Blobs sem segredos adicionais e documentar a arquitetura de produção.
 - [ ] Validar no domínio público o login do aluno, o salvamento sincronizado e a proteção docente.
+- [ ] Diagnosticar a falha relatada no cadastro ou login pelo Netlify Identity no domínio publicado.
+- [ ] Corrigir o fluxo de sessão e validar uma autenticação real de aluno no Netlify.
+- [x] Melhorar a mensagem de falha de login para orientar o cadastro e a confirmação de uma conta Netlify Identity independente.
