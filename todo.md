@@ -13,4 +13,4 @@
 - [x] Inserir uma animação matemática original na página inicial, inspirada no humor de cálculos em movimento.
 - [x] Criar catálogos por série e categorias: Números e Álgebra, Geometria, Grandezas e Medidas, Probabilidade e Estatística.
 - [ ] Definir e implementar o modelo de comercialização após a escolha da plataforma de pagamentos.
-- [ ] Criar o repositório privado GitHub “Rumo ao Milhão” e enviar a versão atualizada da plataforma.
+- [x] Criar o repositório privado GitHub “Rumo ao Milhão” e enviar a versão atualizada da plataforma.

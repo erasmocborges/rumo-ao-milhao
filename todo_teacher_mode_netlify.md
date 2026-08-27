@@ -44,4 +44,4 @@
 - [x] Atualizar a identidade da página para “Me ajuda, prof Erasmo!” com posicionamento claro para estudantes e professores.
 - [x] Aplicar o subtítulo “Atividades, simulados e materiais para ensinar e aprender” na nova entrada da plataforma.
 - [x] Acrescentar um destaque visual matemático original e animado à página inicial.
-- [ ] Criar o repositório privado GitHub “Rumo ao Milhão” após concluir a migração e a nova estrutura inicial.
+- [x] Criar o repositório privado GitHub “Rumo ao Milhão” após concluir a migração e a nova estrutura inicial.
