@@ -252,6 +252,7 @@ export default function Home() {
   const [progressNotice, setProgressNotice] = useState("");
   const [teacherFilter, setTeacherFilter] = useState("todas");
   const [teacherSort, setTeacherSort] = useState("score");
+  const [syncState, setSyncState] = useState<"local" | "syncing" | "cloud" | "error">("local");
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -301,6 +302,8 @@ export default function Home() {
       if (typeof synced.remainingSeconds === "number") setRemainingSeconds(synced.remainingSeconds);
       if (typeof synced.studentName === "string") setStudentName(synced.studentName);
       if (typeof synced.classroom === "string") setClassroom(synced.classroom);
+      if (Array.isArray(synced.attempts)) setAttempts(synced.attempts);
+      setSyncState("cloud");
       setProgressNotice("Progresso sincronizado com sua conta.");
     } catch { /* ignorar dados remotos inválidos */ }
   }, [remoteProgress.data]);
@@ -379,7 +382,14 @@ export default function Home() {
       byArea: areaPerformance.map((area) => ({ short: area.short, correct: area.correct, answered: area.answered, blank: area.blank, percentage: area.percentage })),
       answers: { ...answers },
     };
-    setAttempts((current) => [...current, record]);
+    setAttempts((current) => {
+      const updated = [...current, record];
+      if (isAuthenticated) {
+        setSyncState("syncing");
+        saveRemoteProgress.mutate({ payload: JSON.stringify({ answers, remainingSeconds, studentName, classroom, attempts: updated, savedAt: new Date().toISOString() }) }, { onSuccess: () => setSyncState("cloud"), onError: () => setSyncState("error") });
+      }
+      return updated;
+    });
     window.localStorage.removeItem(PROGRESS_STORAGE_KEY);
     setSubmitted(true);
     setTimerRunning(false);
@@ -404,9 +414,9 @@ export default function Home() {
   };
   const lockTeacherMode = () => { window.sessionStorage.removeItem(TEACHER_SESSION_KEY); setTeacherMode(false); setShowKey(false); };
   const saveProgress = () => {
-    const payload = { answers, remainingSeconds, studentName, classroom, savedAt: new Date().toISOString() };
+    const payload = { answers, remainingSeconds, studentName, classroom, attempts, savedAt: new Date().toISOString() };
     window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(payload));
-    if (isAuthenticated) saveRemoteProgress.mutate({ payload: JSON.stringify(payload) }, { onSuccess: () => setProgressNotice("Progresso salvo e sincronizado com sua conta."), onError: () => setProgressNotice("Progresso salvo localmente; a sincronização será tentada no próximo salvamento.") });
+    if (isAuthenticated) { setSyncState("syncing"); saveRemoteProgress.mutate({ payload: JSON.stringify(payload) }, { onSuccess: () => { setSyncState("cloud"); setProgressNotice("Progresso salvo e sincronizado com sua conta."); }, onError: () => { setSyncState("error"); setProgressNotice("Progresso salvo localmente; a sincronização será tentada no próximo salvamento."); } }); }
     else setProgressNotice("Progresso salvo neste navegador. Entre na sua conta para sincronizá-lo entre dispositivos.");
   };
   const exportAllAttemptsCsv = () => {
@@ -522,7 +532,7 @@ export default function Home() {
           <button onClick={() => { scrollToSection("fontes"); setMenuOpen(false); }}>Fontes</button>
         </nav>
         <div className="top-actions">
-          {!loading && (isAuthenticated ? <button className="top-timer" onClick={() => logout()}>Sair · {user?.name || "Conta"}</button> : <button className="top-timer" onClick={() => startLogin()}>Entrar para sincronizar</button>)}
+          {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => logout()}>Sair · {user?.name || "Conta"}</button></> : <button className="top-timer" onClick={() => startLogin()}>Entrar para sincronizar</button>)}
           {teacherMode ? <button className="top-timer" onClick={lockTeacherMode}>Sair do modo docente</button> : <button className="top-timer" onClick={() => scrollToSection("acesso-docente")}>Acesso docente</button>}
           <button className={`top-timer ${isCriticalTime ? "critical" : ""}`} onClick={() => scrollToSection("questoes")} aria-label="Ir para o cronômetro"><Timer size={15} /><span>{formatDuration(remainingSeconds)}</span></button>
           <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir caderno</Button>
