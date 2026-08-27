@@ -49,6 +49,7 @@ import { questions, areaSummary, type Question } from "@/data/simulado";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { isTeacherPassword } from "@shared/teacherAccess";
 
 type AreaName = (typeof questions)[number]["area"];
 type FilterArea = AreaName | "Todas";
@@ -96,7 +97,6 @@ const ATTEMPTS_STORAGE_KEY = "simulado-enem-attempts-v1";
 const PROFILE_STORAGE_KEY = "simulado-enem-profile-v1";
 const PROGRESS_STORAGE_KEY = "simulado-enem-progress-v1";
 const TEACHER_SESSION_KEY = "simulado-enem-teacher-session-v1";
-const TEACHER_PASSWORD_TOKEN = "RW5lbVBvbGkyQDI2";
 
 function normalizeIdentity(value: string, fallback: string) {
   return (value.trim() || fallback)
@@ -408,7 +408,7 @@ export default function Home() {
     scrollToSection("questoes");
   };
   const unlockTeacherMode = () => {
-    if (btoa(teacherPassword) !== TEACHER_PASSWORD_TOKEN) { setTeacherError(true); return; }
+    if (!isTeacherPassword(teacherPassword)) { setTeacherError(true); return; }
     window.sessionStorage.setItem(TEACHER_SESSION_KEY, "active");
     setTeacherMode(true); setTeacherPassword(""); setTeacherError(false);
   };
@@ -677,7 +677,7 @@ export default function Home() {
           <div className="answer-key"><div className="answer-key-title"><div><span className="mini-label">PAINEL DOCENTE</span><h3>Resultados locais</h3></div><div><select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="todas">Todas as turmas</option>{teacherClassrooms.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select><select value={teacherSort} onChange={(event) => setTeacherSort(event.target.value)}><option value="score">Maior pontuação</option><option value="date">Mais recente</option></select></div></div><div className="answer-key-grid">{teacherRows.map((attempt) => <div key={attempt.id}><span>{attempt.studentName} · {attempt.classroom}</span><strong>{attempt.percentage}%</strong></div>)}</div></div>
         </section>}
 
-        {!teacherMode && <section className="sources-section" id="acesso-docente"><div className="sources-title"><span className="eyebrow"><span></span> Área restrita</span><h2>Acesso<br /><i>docente.</i></h2></div><div className="sources-list"><div className="disclaimer"><LockKeyhole size={17} /><p><strong>Materiais de correção protegidos.</strong> Informe a senha para visualizar máscara, gabarito e chave docente.</p></div><label className="search-field"><input type="password" value={teacherPassword} onChange={(event) => { setTeacherPassword(event.target.value); setTeacherError(false); }} onKeyDown={(event) => event.key === "Enter" && unlockTeacherMode()} placeholder="Senha do modo docente" /></label><Button className="print-button" onClick={unlockTeacherMode}>Entrar no modo docente</Button>{teacherError && <p className="text-[#C84D3A] text-xs font-bold">Senha não reconhecida.</p>}</div></section>}
+        {!teacherMode && <section className="sources-section" id="acesso-docente"><div className="sources-title"><span className="eyebrow"><span></span> Área restrita</span><h2>Acesso<br /><i>docente.</i></h2></div><div className="sources-list"><div className="disclaimer"><LockKeyhole size={17} /><p><strong>Materiais de correção protegidos.</strong> Informe a senha para visualizar máscara, gabarito e chave docente.</p></div><form className="teacher-access-form" onSubmit={(event) => { event.preventDefault(); unlockTeacherMode(); }}><label className="search-field"><input type="password" value={teacherPassword} onChange={(event) => { setTeacherPassword(event.target.value); setTeacherError(false); }} placeholder="Senha do modo docente" autoComplete="current-password" aria-invalid={teacherError} aria-describedby={teacherError ? "teacher-password-error" : undefined} /></label><Button type="submit" className="print-button">Entrar no modo docente</Button></form>{teacherError && <p id="teacher-password-error" className="text-[#C84D3A] text-xs font-bold" role="alert">Não foi possível liberar o acesso. Confira a senha e tente novamente.</p>}</div></section>}
 
         <section className="sources-section" id="fontes">
           <div className="sources-title"><span className="eyebrow"><span></span> Transparência editorial</span><h2>Fontes e<br /><i>delimitação.</i></h2></div>
