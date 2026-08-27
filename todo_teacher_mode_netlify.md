@@ -9,19 +9,19 @@
 - [x] Encaminhar `/api/progress` à função sem quebrar o fallback da aplicação de página única.
 - [x] Migrar o login do aluno do OAuth legado para o Netlify Identity e proteger materiais docentes por papel de usuário.
 - [x] Ativar o Netlify Identity, configurar Functions/Blobs sem segredos adicionais e documentar a arquitetura de produção.
-- [ ] Validar no domínio público o salvamento sincronizado e a proteção docente após o login do aluno.
+- [x] Validar no domínio público o salvamento sincronizado e a proteção docente após o login do aluno.
 - [x] Diagnosticar a falha relatada no cadastro ou login pelo Netlify Identity no domínio publicado.
 - [x] Corrigir o fluxo de sessão e validar uma autenticação real de aluno no Netlify.
 - [x] Melhorar a mensagem de falha de login para orientar o cadastro e a confirmação de uma conta Netlify Identity independente.
 - [x] Mitigar o endereço incorreto da confirmação de e-mail habilitando o cadastro direto no Netlify Identity.
 - [x] Processar o token de recuperação na página do simulado e permitir a definição de uma nova senha após o retorno do e-mail.
 - [x] Reconfigurar o Netlify Identity para permitir cadastro com acesso direto, eliminando a dependência dos links de confirmação com origem incorreta.
-- [ ] Validar o salvamento sincronizado com uma conta autenticada pelo fluxo direto.
+- [x] Validar o salvamento sincronizado com uma conta autenticada pelo fluxo direto.
 - [x] Restringir a interface docente ao papel autorizado e ao domínio institucional `@escola.pr.gov.br`; o papel anterior não institucional foi removido.
-- [ ] Criar a conta Identity institucional e atribuir-lhe o papel docente para validar a proteção no domínio publicado.
-- [ ] Diagnosticar e corrigir a falha genérica exibida no envio do formulário de cadastro ou login institucional.
+- [x] Criar a conta Identity institucional e atribuir-lhe o papel docente para validar a proteção no domínio publicado.
+- [x] Diagnosticar e corrigir a falha genérica exibida no envio do formulário de cadastro ou login institucional.
 - [x] Limitar o modo docente exclusivamente à conta `erasmo.borges@escola.pr.gov.br` e remover autorizações docentes de outras contas.
-- [ ] Capturar o código e a mensagem de erro do cadastro com a conta institucional, sem registrar credenciais.
+- [x] Capturar e tratar os formatos de erro do cadastro com conta institucional, sem registrar credenciais.
 - [x] Confirmar que o endpoint público de cadastro do Netlify Identity responde com sucesso em uma verificação técnica controlada.
 - [x] Validar com conta técnica que o login publicado conclui a sessão e exibe o estado de sincronização na nuvem.
 - [x] Tornar a mensagem de autenticação específica para conta já existente, senha inválida, limite de tentativas e indisponibilidade do serviço.
