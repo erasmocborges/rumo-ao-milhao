@@ -21,3 +21,7 @@
 - [ ] Criar a conta Identity institucional e atribuir-lhe o papel docente para validar a proteção no domínio publicado.
 - [ ] Diagnosticar e corrigir a falha genérica exibida no envio do formulário de cadastro ou login institucional.
 - [ ] Limitar o modo docente exclusivamente à conta `erasmo.borges@escola.pr.gov.br` e remover autorizações docentes de outras contas.
+- [ ] Capturar o código e a mensagem de erro do cadastro com a conta institucional, sem registrar credenciais.
+- [x] Confirmar que o endpoint público de cadastro do Netlify Identity responde com sucesso em uma verificação técnica controlada.
+- [x] Tornar a mensagem de autenticação específica para conta já existente, senha inválida, limite de tentativas e indisponibilidade do serviço.
+- [x] Validar localmente formato de e-mail e tamanho mínimo de senha antes de enviar o formulário ao Netlify Identity.

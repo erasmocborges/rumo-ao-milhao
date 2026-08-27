@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, MailCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { authenticationErrorMessage, credentialValidationError, summarizeAuthError } from "@shared/authFeedback";
 import { passwordRecoveryError } from "@shared/authRecovery";
 import {
   Dialog,
@@ -23,12 +24,6 @@ type StudentAuthDialogProps = {
   requiresPasswordReset: boolean;
   onCompletePasswordRecovery: (password: string) => Promise<void>;
 };
-
-function readableError(error: unknown) {
-  const status = typeof error === "object" && error && "status" in error ? (error as { status?: number }).status : undefined;
-  if (status === 400 || status === 401 || status === 422) return "Não foi possível entrar com estes dados. Se este é seu primeiro acesso, clique em “Criar conta” e confirme o e-mail antes de tentar novamente.";
-  return "Não foi possível concluir o acesso agora. Tente novamente em alguns instantes.";
-}
 
 export function StudentAuthDialog({ open, onOpenChange, initialMode = "login", onLogin, onSignup, onRecover, requiresPasswordReset, onCompletePasswordRecovery }: StudentAuthDialogProps) {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -76,6 +71,13 @@ export function StudentAuthDialog({ open, onOpenChange, initialMode = "login", o
         return;
       }
     }
+    if (mode === "login" || mode === "signup") {
+      const validationError = credentialValidationError(email, password);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+    }
     setPending(true);
     try {
       if (mode === "login") {
@@ -93,7 +95,9 @@ export function StudentAuthDialog({ open, onOpenChange, initialMode = "login", o
         onOpenChange(false);
       }
     } catch (reason) {
-      setError(readableError(reason));
+      const summary = summarizeAuthError(reason);
+      console.error("Falha do Netlify Identity", { status: summary.status, code: summary.code, message: summary.message });
+      setError(authenticationErrorMessage(reason));
     } finally {
       setPending(false);
     }
