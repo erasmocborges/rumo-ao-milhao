@@ -45,11 +45,11 @@ import {
   YAxis,
 } from "recharts";
 import { Button } from "@/components/ui/button";
+import { StudentAuthDialog } from "@/components/StudentAuthDialog";
 import { questions, areaSummary, type Question } from "@/data/simulado";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { startLogin } from "@/const";
-import { trpc } from "@/lib/trpc";
-import { isTeacherPassword } from "@shared/teacherAccess";
+import { loadRemoteProgress, saveRemoteProgress } from "@/lib/progressApi";
+import { hasTeacherRole } from "@shared/identityRoles";
 
 type AreaName = (typeof questions)[number]["area"];
 type FilterArea = AreaName | "Todas";
@@ -96,7 +96,6 @@ const MAX_ATTEMPTS = 3;
 const ATTEMPTS_STORAGE_KEY = "simulado-enem-attempts-v1";
 const PROFILE_STORAGE_KEY = "simulado-enem-profile-v1";
 const PROGRESS_STORAGE_KEY = "simulado-enem-progress-v1";
-const TEACHER_SESSION_KEY = "simulado-enem-teacher-session-v1";
 
 function normalizeIdentity(value: string, fallback: string) {
   return (value.trim() || fallback)
@@ -220,16 +219,10 @@ function QuestionCard({ q, selected, onSelect, revealed, onReveal, canReveal, di
 }
 
 export default function Home() {
-  // The useAuth hook provides authentication state.
-  // To implement login/logout, call logout(), or start login from an event
-  // handler: onClick={() => startLogin()} (imported from "@/const"). Never call
-  // startLogin() during render (no href={startLogin()}) — it mints a one-time
-  // nonce cookie and must run only at the moment of navigation.
-  let { user, loading, error, isAuthenticated, logout } = useAuth();
-  const remoteProgress = trpc.simulator.getProgress.useQuery(undefined, { enabled: isAuthenticated });
-  const saveRemoteProgress = trpc.simulator.saveProgress.useMutation();
+  const { user, loading, isAuthenticated, login, signup, recover, logout } = useAuth();
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
   const [activeArea, setActiveArea] = useState<FilterArea>("Todas");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -246,13 +239,12 @@ export default function Home() {
   const [timerRunning, setTimerRunning] = useState(false);
   const [attempts, setAttempts] = useState<Attempt[]>(initialAttempts);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [teacherMode, setTeacherMode] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem(TEACHER_SESSION_KEY) === "active");
-  const [teacherPassword, setTeacherPassword] = useState("");
-  const [teacherError, setTeacherError] = useState(false);
   const [progressNotice, setProgressNotice] = useState("");
   const [teacherFilter, setTeacherFilter] = useState("todas");
   const [teacherSort, setTeacherSort] = useState("score");
   const [syncState, setSyncState] = useState<"local" | "syncing" | "cloud" | "error">("local");
+  const [remotePayload, setRemotePayload] = useState<string | null>(null);
+  const teacherMode = hasTeacherRole(user);
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -295,9 +287,29 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!remoteProgress.data?.payload) return;
+    let active = true;
+    if (!isAuthenticated) {
+      setRemotePayload(null);
+      setSyncState("local");
+      return () => { active = false; };
+    }
+    setSyncState("syncing");
+    void loadRemoteProgress()
+      .then((result) => {
+        if (!active) return;
+        setRemotePayload(result.payload);
+        setSyncState("cloud");
+      })
+      .catch(() => {
+        if (active) setSyncState("error");
+      });
+    return () => { active = false; };
+  }, [isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    if (!remotePayload) return;
     try {
-      const synced = JSON.parse(remoteProgress.data.payload);
+      const synced = JSON.parse(remotePayload);
       if (synced.answers) setAnswers(synced.answers);
       if (typeof synced.remainingSeconds === "number") setRemainingSeconds(synced.remainingSeconds);
       if (typeof synced.studentName === "string") setStudentName(synced.studentName);
@@ -306,7 +318,7 @@ export default function Home() {
       setSyncState("cloud");
       setProgressNotice("Progresso sincronizado com sua conta.");
     } catch { /* ignorar dados remotos inválidos */ }
-  }, [remoteProgress.data]);
+  }, [remotePayload]);
 
   const areaPerformance = useMemo(() => areaSummary.map((entry) => {
     const areaQuestions = questions.filter((q) => q.area === entry.area);
@@ -320,7 +332,7 @@ export default function Home() {
   const overallPercentage = Math.round((totalCorrect / questions.length) * 100);
   const isCriticalTime = remainingSeconds > 0 && remainingSeconds <= 10 * 60;
   const isTimeOver = remainingSeconds === 0;
-  const studentKey = localProfileId;
+  const studentKey = user?.id || localProfileId;
   const classroomKey = normalizeIdentity(classroom, "turma-local");
   const studentAttempts = attempts.filter((attempt) => attempt.studentKey === studentKey);
   const attemptsUsed = studentAttempts.length;
@@ -365,6 +377,18 @@ export default function Home() {
     setTimerRunning(false);
     setRemainingSeconds(timerPresets[preset].seconds);
   };
+  const syncProgress = async (payload: { answers: Record<number, string>; remainingSeconds: number; studentName: string; classroom: string; attempts: Attempt[]; savedAt: string }) => {
+    if (!isAuthenticated) return;
+    setSyncState("syncing");
+    try {
+      await saveRemoteProgress(JSON.stringify(payload));
+      setSyncState("cloud");
+      setProgressNotice("Progresso salvo e sincronizado com sua conta.");
+    } catch {
+      setSyncState("error");
+      setProgressNotice("Progresso salvo neste navegador; a sincronização será tentada no próximo salvamento.");
+    }
+  };
   const finishSimulation = () => {
     if (submitted || maxAttemptsReached || totalAnswered === 0) return;
     const now = new Date().toISOString();
@@ -382,14 +406,9 @@ export default function Home() {
       byArea: areaPerformance.map((area) => ({ short: area.short, correct: area.correct, answered: area.answered, blank: area.blank, percentage: area.percentage })),
       answers: { ...answers },
     };
-    setAttempts((current) => {
-      const updated = [...current, record];
-      if (isAuthenticated) {
-        setSyncState("syncing");
-        saveRemoteProgress.mutate({ payload: JSON.stringify({ answers, remainingSeconds, studentName, classroom, attempts: updated, savedAt: new Date().toISOString() }) }, { onSuccess: () => setSyncState("cloud"), onError: () => setSyncState("error") });
-      }
-      return updated;
-    });
+    const updated = [...attempts, record];
+    setAttempts(updated);
+    if (isAuthenticated) void syncProgress({ answers, remainingSeconds, studentName, classroom, attempts: updated, savedAt: new Date().toISOString() });
     window.localStorage.removeItem(PROGRESS_STORAGE_KEY);
     setSubmitted(true);
     setTimerRunning(false);
@@ -407,16 +426,10 @@ export default function Home() {
     setPage(1);
     scrollToSection("questoes");
   };
-  const unlockTeacherMode = () => {
-    if (!isTeacherPassword(teacherPassword)) { setTeacherError(true); return; }
-    window.sessionStorage.setItem(TEACHER_SESSION_KEY, "active");
-    setTeacherMode(true); setTeacherPassword(""); setTeacherError(false);
-  };
-  const lockTeacherMode = () => { window.sessionStorage.removeItem(TEACHER_SESSION_KEY); setTeacherMode(false); setShowKey(false); };
   const saveProgress = () => {
     const payload = { answers, remainingSeconds, studentName, classroom, attempts, savedAt: new Date().toISOString() };
     window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(payload));
-    if (isAuthenticated) { setSyncState("syncing"); saveRemoteProgress.mutate({ payload: JSON.stringify(payload) }, { onSuccess: () => { setSyncState("cloud"); setProgressNotice("Progresso salvo e sincronizado com sua conta."); }, onError: () => { setSyncState("error"); setProgressNotice("Progresso salvo localmente; a sincronização será tentada no próximo salvamento."); } }); }
+    if (isAuthenticated) void syncProgress(payload);
     else setProgressNotice("Progresso salvo neste navegador. Entre na sua conta para sincronizá-lo entre dispositivos.");
   };
   const exportAllAttemptsCsv = () => {
@@ -532,13 +545,15 @@ export default function Home() {
           <button onClick={() => { scrollToSection("fontes"); setMenuOpen(false); }}>Fontes</button>
         </nav>
         <div className="top-actions">
-          {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => logout()}>Sair · {user?.name || "Conta"}</button></> : <button className="top-timer" onClick={() => startLogin()}>Entrar para sincronizar</button>)}
-          {teacherMode ? <button className="top-timer" onClick={lockTeacherMode}>Sair do modo docente</button> : <button className="top-timer" onClick={() => scrollToSection("acesso-docente")}>Acesso docente</button>}
+          {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => void logout()}>Sair · {user?.name || user?.email || "Conta"}</button></> : <button className="top-timer" onClick={() => setAuthOpen(true)}>Entrar para sincronizar</button>)}
+          {teacherMode ? <span className="top-timer">Modo docente</span> : <button className="top-timer" onClick={() => scrollToSection("acesso-docente")}>Acesso docente</button>}
           <button className={`top-timer ${isCriticalTime ? "critical" : ""}`} onClick={() => scrollToSection("questoes")} aria-label="Ir para o cronômetro"><Timer size={15} /><span>{formatDuration(remainingSeconds)}</span></button>
           <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir caderno</Button>
           <button className="menu-button" aria-label="Abrir menu" onClick={() => setMenuOpen((value) => !value)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
       </header>
+
+      <StudentAuthDialog open={authOpen} onOpenChange={setAuthOpen} onLogin={login} onSignup={signup} onRecover={recover} />
 
       <main id="inicio">
         <section className="hero-section">
@@ -636,7 +651,7 @@ export default function Home() {
             <section className="student-dashboard" id="resultado" aria-label="Painel de desempenho do estudante">
               <span className="workbook-folio">FOLHA 01 · APLICAÇÃO E ACOMPANHAMENTO</span>
               <div className="student-dashboard-top">
-                <div><span className="eyebrow"><span></span> Modo de realização</span><h3>Seu percurso, em tempo real.</h3><p>As respostas e tentativas ficam apenas neste navegador. A pontuação é por acerto simples e não corresponde à nota TRI.</p></div>
+                <div><span className="eyebrow"><span></span> Modo de realização</span><h3>Seu percurso, em tempo real.</h3><p>{isAuthenticated ? "Suas respostas e tentativas podem ser sincronizadas com esta conta. A pontuação é por acerto simples e não corresponde à nota TRI." : "As respostas e tentativas ficam neste navegador até você entrar em uma conta. A pontuação é por acerto simples e não corresponde à nota TRI."}</p></div>
                 <div className="student-profile"><label className="student-name"><UserRound size={16} /><span>Nome no relatório</span><input value={studentName} disabled={submitted || maxAttemptsReached} onChange={(event) => setStudentName(event.target.value)} placeholder="Como quer ser identificado?" /></label><label className="student-name classroom-name"><GraduationCap size={16} /><span>Turma local</span><input value={classroom} disabled={submitted || maxAttemptsReached} onChange={(event) => setClassroom(event.target.value)} placeholder="Ex.: 3.º ano A" /></label></div>
               </div>
               <div className={`attempt-limit ${maxAttemptsReached ? "limit-reached" : ""}`}><div><span className="attempt-kicker">LIMITE DE REALIZAÇÃO</span><strong>{attemptsUsed} de {MAX_ATTEMPTS} tentativas concluídas</strong><p>{maxAttemptsReached ? "As três tentativas foram concluídas neste navegador. O ciclo de prática está encerrado." : `Você ainda pode concluir ${attemptsRemaining} ${attemptsRemaining === 1 ? "tentativa" : "tentativas"} com este identificador.`}</p></div><div className="attempt-dots" aria-label={`${attemptsUsed} de ${MAX_ATTEMPTS} tentativas utilizadas`}>{Array.from({ length: MAX_ATTEMPTS }, (_, index) => <span className={index < attemptsUsed ? "used" : ""} key={index}>{index + 1}</span>)}</div></div>
@@ -655,7 +670,7 @@ export default function Home() {
                 {areaPerformance.map((area) => { const meta = areaMeta[area.area as AreaName]; return <div className="area-performance" key={area.area}><div><span style={{ background: meta.color }}></span><p>{area.short}<small>{area.correct}/25 acertos</small></p><strong>{area.percentage}%</strong></div><div className="performance-track"><i style={{ width: `${area.percentage}%`, background: meta.color }}></i></div><small>{area.answered} respondidas · {area.blank} em branco</small></div>; })}
               </div>
               {submitted && <div className="result-ready"><Check size={17} /><p><strong>Resultado registrado.</strong> Consulte as respostas comentadas, analise os percentuais por área e exporte seu relatório personalizado.</p>{!maxAttemptsReached && <button onClick={beginNextAttempt}>Iniciar tentativa {attemptsUsed + 1} <ArrowRight size={14} /></button>}</div>}
-              {maxAttemptsReached && <section className="attempts-complete" id="acompanhamento"><div className="attempts-complete-heading"><div><span className="eyebrow"><span></span> Ciclo concluído</span><h3>Três tentativas, agora em <i>perspectiva.</i></h3><p>O limite é aplicado localmente ao identificador e à turma informados neste navegador. Para um acompanhamento compartilhado entre dispositivos, é necessário sincronização em servidor.</p></div><div className="complete-lock"><LockKeyhole size={20} /><span>3 / 3</span></div></div><div className="local-insights"><article className="attempt-history"><div className="insight-title"><History size={18} /><div><span>HISTÓRICO DO ESTUDANTE</span><strong>{studentName.trim() || "Estudante local"}</strong></div></div>{studentAttempts.map((attempt, index) => <div className="attempt-row" key={attempt.id}><span>{String(index + 1).padStart(2, "0")}</span><p>{new Date(attempt.createdAt).toLocaleDateString("pt-BR")}<small>{attempt.correct}/100 acertos · {attempt.answered} respondidas</small></p><strong>{attempt.percentage}%</strong></div>)}</article><article className="teacher-panel"><div className="insight-title"><UsersRound size={18} /><div><span>PAINEL DOCENTE LOCAL</span><strong>{classroom.trim() || "Turma local"}</strong></div></div><div className="teacher-metrics"><div><strong>{uniqueStudentsInClass}</strong><span>estudantes</span></div><div><strong>{classAttempts.length}</strong><span>tentativas</span></div><div><strong>{classAverage}%</strong><span>média local</span></div></div><p>Os indicadores agregam somente registros salvos neste dispositivo para a turma atual.</p><button className="csv-export" onClick={exportAllAttemptsCsv}><FileDown size={14} /> Exportar CSV de todas as turmas</button></article><article className="anonymous-ranking"><div className="insight-title"><Medal size={18} /><div><span>RANKING ANÔNIMO LOCAL</span><strong>Melhor resultado por participante</strong></div></div><div className="ranking-list">{anonymousRanking.map((entry, index) => <div key={entry.label}><span>{index + 1}</span><p>{entry.label}<small>{entry.attempts} {entry.attempts === 1 ? "tentativa" : "tentativas"}</small></p><strong>{entry.best}%</strong></div>)}</div></article></div><section className="review-panel"><div className="review-heading"><div><span className="eyebrow"><span></span> Modo de revisão</span><h4>Erros que viram <i>próximo passo.</i></h4><p>Após a terceira tentativa, compare suas respostas incorretas da última realização com o gabarito e a explicação detalhada.</p></div><button onClick={() => setReviewOpen((value) => !value)}>{reviewOpen ? "Ocultar revisão" : `Revisar ${wrongQuestions.length} erros`} <ArrowRight size={15} /></button></div>{reviewOpen && <div className="review-list">{latestAttempt?.answers ? wrongQuestions.map((q) => <article className="review-item" key={q.numero}><p><strong>Questão {String(q.numero).padStart(2, "0")}</strong> · {q.enunciado}</p><div><span>Sua resposta: <b>{latestAttempt.answers[q.numero]}</b></span><span>Correta: <b>{q.correta}</b></span></div><aside><Check size={15} /> <strong>Explicação:</strong> {q.justificativa}</aside></article>) : <p className="review-empty">As tentativas anteriores não registraram as alternativas. A revisão estará disponível nas próximas tentativas concluídas.</p>}</div>}</section></section>}
+              {maxAttemptsReached && <section className="attempts-complete" id="acompanhamento"><div className="attempts-complete-heading"><div><span className="eyebrow"><span></span> Ciclo concluído</span><h3>Três tentativas, agora em <i>perspectiva.</i></h3><p>{isAuthenticated ? "Seu histórico permanece associado a esta conta e pode ser retomado em outro dispositivo." : "Entre em uma conta para manter o histórico deste ciclo disponível em outro dispositivo."}</p></div><div className="complete-lock"><LockKeyhole size={20} /><span>3 / 3</span></div></div><div className="local-insights"><article className="attempt-history"><div className="insight-title"><History size={18} /><div><span>HISTÓRICO DO ESTUDANTE</span><strong>{studentName.trim() || "Estudante local"}</strong></div></div>{studentAttempts.map((attempt, index) => <div className="attempt-row" key={attempt.id}><span>{String(index + 1).padStart(2, "0")}</span><p>{new Date(attempt.createdAt).toLocaleDateString("pt-BR")}<small>{attempt.correct}/100 acertos · {attempt.answered} respondidas</small></p><strong>{attempt.percentage}%</strong></div>)}</article><article className="teacher-panel"><div className="insight-title"><UsersRound size={18} /><div><span>PAINEL DOCENTE LOCAL</span><strong>{classroom.trim() || "Turma local"}</strong></div></div><div className="teacher-metrics"><div><strong>{uniqueStudentsInClass}</strong><span>estudantes</span></div><div><strong>{classAttempts.length}</strong><span>tentativas</span></div><div><strong>{classAverage}%</strong><span>média local</span></div></div><p>Os indicadores agregam registros disponíveis neste dispositivo para a turma atual.</p><button className="csv-export" onClick={exportAllAttemptsCsv}><FileDown size={14} /> Exportar CSV de todas as turmas</button></article><article className="anonymous-ranking"><div className="insight-title"><Medal size={18} /><div><span>RANKING ANÔNIMO LOCAL</span><strong>Melhor resultado por participante</strong></div></div><div className="ranking-list">{anonymousRanking.map((entry, index) => <div key={entry.label}><span>{index + 1}</span><p>{entry.label}<small>{entry.attempts} {entry.attempts === 1 ? "tentativa" : "tentativas"}</small></p><strong>{entry.best}%</strong></div>)}</div></article></div><section className="review-panel"><div className="review-heading"><div><span className="eyebrow"><span></span> Modo de revisão</span><h4>Erros que viram <i>próximo passo.</i></h4><p>Após a terceira tentativa, compare suas respostas incorretas da última realização com o gabarito e a explicação detalhada.</p></div><button onClick={() => setReviewOpen((value) => !value)}>{reviewOpen ? "Ocultar revisão" : `Revisar ${wrongQuestions.length} erros`} <ArrowRight size={15} /></button></div>{reviewOpen && <div className="review-list">{latestAttempt?.answers ? wrongQuestions.map((q) => <article className="review-item" key={q.numero}><p><strong>Questão {String(q.numero).padStart(2, "0")}</strong> · {q.enunciado}</p><div><span>Sua resposta: <b>{latestAttempt.answers[q.numero]}</b></span><span>Correta: <b>{q.correta}</b></span></div><aside><Check size={15} /> <strong>Explicação:</strong> {q.justificativa}</aside></article>) : <p className="review-empty">As tentativas anteriores não registraram as alternativas. A revisão estará disponível nas próximas tentativas concluídas.</p>}</div>}</section></section>}
             </section>
             <div className="filter-panel">
               <div className="filter-icon"><Filter size={18} /></div>
@@ -677,7 +692,7 @@ export default function Home() {
           <div className="answer-key"><div className="answer-key-title"><div><span className="mini-label">PAINEL DOCENTE</span><h3>Resultados locais</h3></div><div><select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="todas">Todas as turmas</option>{teacherClassrooms.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select><select value={teacherSort} onChange={(event) => setTeacherSort(event.target.value)}><option value="score">Maior pontuação</option><option value="date">Mais recente</option></select></div></div><div className="answer-key-grid">{teacherRows.map((attempt) => <div key={attempt.id}><span>{attempt.studentName} · {attempt.classroom}</span><strong>{attempt.percentage}%</strong></div>)}</div></div>
         </section>}
 
-        {!teacherMode && <section className="sources-section" id="acesso-docente"><div className="sources-title"><span className="eyebrow"><span></span> Área restrita</span><h2>Acesso<br /><i>docente.</i></h2></div><div className="sources-list"><div className="disclaimer"><LockKeyhole size={17} /><p><strong>Materiais de correção protegidos.</strong> Informe a senha para visualizar máscara, gabarito e chave docente.</p></div><form className="teacher-access-form" onSubmit={(event) => { event.preventDefault(); unlockTeacherMode(); }}><label className="search-field"><input type="password" value={teacherPassword} onChange={(event) => { setTeacherPassword(event.target.value); setTeacherError(false); }} placeholder="Senha do modo docente" autoComplete="current-password" aria-invalid={teacherError} aria-describedby={teacherError ? "teacher-password-error" : undefined} /></label><Button type="submit" className="print-button">Entrar no modo docente</Button></form>{teacherError && <p id="teacher-password-error" className="text-[#C84D3A] text-xs font-bold" role="alert">Não foi possível liberar o acesso. Confira a senha e tente novamente.</p>}</div></section>}
+        {!teacherMode && <section className="sources-section" id="acesso-docente"><div className="sources-title"><span className="eyebrow"><span></span> Área restrita</span><h2>Acesso<br /><i>docente.</i></h2></div><div className="sources-list"><div className="disclaimer"><LockKeyhole size={17} /><p><strong>Materiais de correção protegidos por conta.</strong> Máscara, gabarito e chave ficam disponíveis somente a contas com perfil docente autorizado.</p></div>{isAuthenticated ? <p className="text-sm leading-6 text-[#435064]">Esta conta não possui perfil docente. Peça ao administrador do simulado para atribuir esse perfil e entre novamente.</p> : <Button className="print-button" onClick={() => setAuthOpen(true)}>Entrar com conta docente</Button>}</div></section>}
 
         <section className="sources-section" id="fontes">
           <div className="sources-title"><span className="eyebrow"><span></span> Transparência editorial</span><h2>Fontes e<br /><i>delimitação.</i></h2></div>

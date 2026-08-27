@@ -6,18 +6,21 @@ O build do projeto gera a interface do navegador em `dist/public`, enquanto o Ne
 
 ## O que estará disponível
 
-Após o próximo deploy, a interface estática do simulado — questões, cronômetro, correção local, PDF, CSV e modo docente local — será acessível em `https://prof-erasmo-simulado-enem.netlify.app`.
+Após o próximo deploy, a interface do simulado — questões, cronômetro, PDF, CSV e conta de aluno — estará acessível em `https://prof-erasmo-simulado-enem.netlify.app`. O login e o cadastro foram migrados para o **Netlify Identity**, e a sincronização de respostas, tentativas e revisões utiliza a função `/api/progress` com armazenamento persistente no Netlify Blobs.
 
-> O login e a sincronização entre dispositivos dependem do backend tRPC/Express e do banco de dados. A estrutura atual do Netlify não executa o arquivo `dist/index.js` como servidor contínuo. Para manter contas e nuvem fora do ambiente original, será necessária uma adaptação posterior para funções do Netlify e um banco de dados/OAuth configurados no painel do Netlify.
+O registro está aberto e solicita confirmação por e-mail. Não é necessário copiar segredos do ambiente Manus, configurar `DATABASE_URL` ou manter as variáveis do OAuth anterior: Identity e Blobs recebem o contexto da própria plataforma ao executar funções. [1] [2]
 
-## Validação de acessos em 27 de agosto de 2026
+## Acesso docente
 
-O modo docente foi validado no domínio público: quando o campo recebe a senha configurada, a página troca para o estado **“Sair do modo docente”** e revela máscara, gabarito e chave. O formulário também passou a aceitar a tecla Enter e a ignorar espaços acidentais no início ou fim da senha.
+A senha local deixou de ser um mecanismo de produção. Materiais de correção são revelados somente para uma conta com o papel `teacher` confirmado pelo Netlify Identity. Para autorizar o professor, crie a conta na página pública e, depois, abra **Project configuration → Identity → Users**, localize a conta e atribua o papel `teacher`. A alteração passa a valer no próximo login ou renovação de sessão.
 
-O botão **“Entrar para sincronizar”** monta o início do fluxo OAuth e cria o cookie temporário de segurança. Entretanto, o callback `https://prof-erasmo-simulado-enem.netlify.app/api/oauth/callback` ainda retorna o HTML estático da página, em vez de executar a rota OAuth. Por isso, alunos não conseguem finalizar a autenticação nem sincronizar progresso/histórico neste domínio no estado atual.
-
-Para ativar essas funções no Netlify, será necessário publicar o Express/tRPC como uma função do Netlify, reescrever `/api/*` para essa função e configurar no painel do Netlify as variáveis de ambiente de backend e o banco compatível. A documentação oficial do Netlify para essa arquitetura está em [Express on Netlify](https://docs.netlify.com/build/frameworks/framework-setup-guides/express/). Nenhum segredo deve ser incluído no repositório.
+As contas de aluno recebem o papel `student` no cadastro. O progresso é armazenado sob uma chave baseada no identificador de sessão da conta, sem aceitar um identificador informado pelo navegador.
 
 ## Próximo deploy
 
-Como o projeto já está ligado ao GitHub, basta enviar este arquivo à branch `main`. O Netlify deverá iniciar uma nova publicação automaticamente. Confira em **Deploys** se o campo *Publish directory* indica `dist/public` e teste a página inicial do domínio público.
+Como o projeto já está ligado ao GitHub, basta enviar as alterações à branch `main`. O Netlify deverá iniciar uma nova publicação automaticamente. Confira em **Deploys** se o campo *Publish directory* indica `dist/public`, se a lista **Functions** mostra `progress` e teste criação de conta, confirmação por e-mail e salvamento de progresso no domínio público.
+
+## Referências
+
+[1]: https://docs.netlify.com/manage/security/secure-access-to-sites/identity/overview/ "Netlify Identity"
+[2]: https://docs.netlify.com/build/data-and-storage/netlify-blobs/ "Netlify Blobs"
