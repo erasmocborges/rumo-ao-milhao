@@ -29,3 +29,7 @@
 - [x] Ocultar o e-mail docente da interface pública, renomear o acesso do cabeçalho para aluno e criar o acesso discreto ao professor desenvolvedor no fim da página.
 - [x] Corrigir o cabeçalho móvel para ocultar o botão de impressão e manter os controles de acesso legíveis sem overflow.
 - [x] Restringir a impressão do caderno ao professor desenvolvedor autorizado, removendo esses controles da experiência de aluno.
+- [x] Criar paginação de impressão otimizada para o caderno acessado pelo professor desenvolvedor.
+- [x] Exibir uma confirmação para o professor antes de abrir a janela de impressão do caderno.
+- [x] Permitir a exportação direta do caderno em PDF no painel do professor desenvolvedor.
+- [x] Executar um simulado de teste com respostas controladas e verificar a correção global e por área.

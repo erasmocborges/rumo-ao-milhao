@@ -45,11 +45,14 @@ import {
   YAxis,
 } from "recharts";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { StudentAuthDialog } from "@/components/StudentAuthDialog";
 import { questions, areaSummary, type Question } from "@/data/simulado";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { loadRemoteProgress, saveRemoteProgress } from "@/lib/progressApi";
 import { hasInstitutionalTeacherAccess } from "@shared/identityRoles";
+import { cadernoPdfFilename, paginateCadernoForPrint } from "@shared/cadernoPrint";
+import { calculateSimulationScore } from "@shared/simulationScoring";
 
 type AreaName = (typeof questions)[number]["area"];
 type FilterArea = AreaName | "Todas";
@@ -170,20 +173,34 @@ function downloadFile(mode: DownloadMode) {
   URL.revokeObjectURL(href);
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] || character);
+}
+
+function printableCadernoHtml() {
+  const pages = paginateCadernoForPrint(questions);
+  return pages.map((page, pageIndex) => {
+    const questionHtml = page.map((question) => `
+      <article class="print-question">
+        <div class="print-question-meta"><strong>Questão ${String(question.numero).padStart(2, "0")}</strong><span>${escapeHtml(question.areaCurta)}</span></div>
+        <p class="print-stem">${escapeHtml(question.enunciado)}</p>
+        <ol class="print-alternatives" type="A">
+          ${(["A", "B", "C", "D"] as const).map((letter) => `<li>${escapeHtml(question.alternativas[letter])}</li>`).join("")}
+        </ol>
+      </article>`).join("");
+    const identification = pageIndex === 0 ? `<div class="print-identification"><span>Escola: ______________________________________________</span><span>Professor(a): ________________________________________</span><span>Estudante: __________________________________________</span><span>Turma: ____________________ Data: ____ / ____ / ______</span></div>` : "";
+    return `<section class="print-page"><header class="print-page-header"><span>SIMULADO ENEM INTERATIVO</span><strong>Caderno de questões</strong><span>Folha ${String(pageIndex + 1).padStart(2, "0")} de ${String(pages.length).padStart(2, "0")}</span></header>${identification}${questionHtml}<footer class="print-page-footer"><span>Material autoral reformulado para aplicação pedagógica.</span><span>${pageIndex + 1} / ${pages.length}</span></footer></section>`;
+  }).join("");
+}
+
 function printPreview() {
-  const printable = markdownFor("caderno")
-    .replace(/^# (.*)$/gm, "<h1>$1</h1>")
-    .replace(/^## (.*)$/gm, "<h2>$1</h2>")
-    .replace(/^> (.*)$/gm, "<blockquote>$1</blockquote>")
-    .replace(/^([ABCD])\. (.*)$/gm, "<p><strong>$1.</strong> $2</p>")
-    .replace(/\n---\n/g, "<hr>")
-    .replace(/\n\n/g, "<br><br>");
   const printWindow = window.open("", "_blank", "noopener,noreferrer");
-  if (!printWindow) return;
-  printWindow.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Simulado ENEM — Caderno</title><style>body{font-family:Arial,sans-serif;color:#1D2A44;max-width:760px;margin:36px auto;line-height:1.5}h1{font-size:25px;border-bottom:3px solid #C84D3A;padding-bottom:9px}h2{font-size:18px;break-after:avoid;margin-top:28px}p{margin:8px 0}blockquote{border-left:4px solid #C84D3A;margin:14px 0;padding-left:12px;color:#475569}hr{border:0;border-top:1px solid #cbd5e1;margin:20px 0}@media print{body{margin:15mm}h2{page-break-after:avoid}}</style></head><body>${printable}</body></html>`);
+  if (!printWindow) return false;
+  printWindow.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Simulado ENEM — Caderno</title><style>@page{size:A4;margin:12mm 14mm}*{box-sizing:border-box}body{margin:0;background:#eef0f2;color:#182940;font-family:Arial,sans-serif}.print-page{position:relative;min-height:273mm;overflow:hidden;background:#fff;padding:0 0 15mm;page-break-after:always;break-after:page}.print-page:last-child{page-break-after:auto;break-after:auto}.print-page-header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:9mm;border-top:3px solid #c84d3a;border-bottom:1px solid #cdd4db;padding:3mm 0 3.4mm;color:#546477;font-size:7.5pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.print-page-header strong{color:#1d2a44;font-size:9pt;letter-spacing:.025em;text-transform:none}.print-page-header span:last-child{text-align:right}.print-identification{display:grid;grid-template-columns:1fr 1fr;gap:3.3mm 8mm;margin:5mm 0 4mm;border:1px solid #d6dce0;padding:3.5mm 4mm;color:#3f5066;font-size:8.2pt;line-height:1.25}.print-question{break-inside:avoid;page-break-inside:avoid;padding:4.5mm 0 4.3mm;border-bottom:1px solid #dce1e5}.print-question-meta{display:flex;justify-content:space-between;gap:7mm;color:#6a7888;font-size:7.5pt;text-transform:uppercase;letter-spacing:.075em}.print-question-meta strong{color:#c84d3a;font-size:9.4pt;letter-spacing:.03em}.print-stem{margin:2.2mm 0 2.6mm;color:#1d2a44;font-size:9.8pt;line-height:1.4}.print-alternatives{display:grid;grid-template-columns:1fr 1fr;gap:1.6mm 8mm;margin:0;padding-left:5mm;color:#33455a;font-size:8.9pt;line-height:1.35}.print-alternatives li{padding-left:1mm}.print-page-footer{position:absolute;right:0;bottom:0;left:0;display:flex;justify-content:space-between;border-top:1px solid #d6dce0;padding-top:2.5mm;color:#718092;font-size:7.2pt}@media screen{body{padding:16px}.print-page{width:182mm;min-height:273mm;margin:0 auto 16px;padding:12mm 14mm 15mm;box-shadow:0 5px 18px rgba(22,37,55,.16)}}@media print{body{background:#fff}.print-page{width:auto;margin:0;padding:0 0 15mm;box-shadow:none}}</style></head><body>${printableCadernoHtml()}</body></html>`);
   printWindow.document.close();
   printWindow.focus();
   window.setTimeout(() => printWindow.print(), 300);
+  return true;
 }
 
 function QuestionCard({ q, selected, onSelect, revealed, onReveal, canReveal, disabled }: { q: Question; selected?: string; onSelect: (answer: string) => void; revealed: boolean; onReveal: () => void; canReveal: boolean; disabled: boolean }) {
@@ -245,6 +262,7 @@ export default function Home() {
   const [teacherSort, setTeacherSort] = useState("score");
   const [syncState, setSyncState] = useState<"local" | "syncing" | "cloud" | "error">("local");
   const [remotePayload, setRemotePayload] = useState<string | null>(null);
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
   const teacherMode = hasInstitutionalTeacherAccess(user);
   const openAuth = (mode: "login" | "signup") => {
     setAuthInitialMode(mode);
@@ -325,16 +343,11 @@ export default function Home() {
     } catch { /* ignorar dados remotos inválidos */ }
   }, [remotePayload]);
 
-  const areaPerformance = useMemo(() => areaSummary.map((entry) => {
-    const areaQuestions = questions.filter((q) => q.area === entry.area);
-    const answered = areaQuestions.filter((q) => Boolean(answers[q.numero])).length;
-    const correct = areaQuestions.filter((q) => answers[q.numero] === q.correta).length;
-    return { ...entry, answered, correct, blank: areaQuestions.length - answered, percentage: Math.round((correct / areaQuestions.length) * 100) };
-  }), [answers]);
-
-  const totalAnswered = Object.keys(answers).length;
-  const totalCorrect = questions.filter((q) => answers[q.numero] === q.correta).length;
-  const overallPercentage = Math.round((totalCorrect / questions.length) * 100);
+  const simulationScore = useMemo(() => calculateSimulationScore(questions, answers), [answers]);
+  const areaPerformance = simulationScore.byArea;
+  const totalAnswered = simulationScore.answered;
+  const totalCorrect = simulationScore.correct;
+  const overallPercentage = simulationScore.percentage;
   const isCriticalTime = remainingSeconds > 0 && remainingSeconds <= 10 * 60;
   const isTimeOver = remainingSeconds === 0;
   const studentKey = user?.id || localProfileId;
@@ -533,6 +546,77 @@ export default function Home() {
     const safeName = reportName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "estudante";
     doc.save(`resultado-simulado-enem-${safeName}.pdf`);
   };
+  const exportCadernoPdf = () => {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let page = 1;
+    let y = 35;
+    const drawHeader = () => {
+      doc.setFillColor(29, 42, 68);
+      doc.rect(0, 0, pageWidth, 25, "F");
+      doc.setTextColor(255, 250, 242);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text("SIMULADO ENEM — CADERNO DE QUESTÕES", 15, 12);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.text("Material autoral reformulado para aplicação pedagógica", 15, 18);
+      doc.text(`Folha ${String(page).padStart(2, "0")}`, pageWidth - 15, 18, { align: "right" });
+      doc.setTextColor(29, 42, 68);
+    };
+    const drawFooter = (pageNumber: number) => {
+      doc.setDrawColor(207, 199, 184);
+      doc.line(15, pageHeight - 12, pageWidth - 15, pageHeight - 12);
+      doc.setTextColor(112, 126, 142);
+      doc.setFontSize(7);
+      doc.text("Simulado ENEM Interativo", 15, pageHeight - 7);
+      doc.text(`${pageNumber}`, pageWidth - 15, pageHeight - 7, { align: "right" });
+    };
+    const nextPage = () => { doc.addPage(); page += 1; y = 35; drawHeader(); };
+
+    drawHeader();
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.text(["Escola: ______________________________________________", "Professor(a): ________________________________________", "Estudante: __________________________________________", "Turma: ____________________    Data: ____ / ____ / ______"], 15, y, { lineHeightFactor: 1.55 });
+    y += 27;
+    questions.forEach((question) => {
+      const questionLines = doc.splitTextToSize(question.enunciado, pageWidth - 30) as string[];
+      const alternativeLines = (["A", "B", "C", "D"] as const).flatMap((letter) => doc.splitTextToSize(`${letter}. ${question.alternativas[letter]}`, pageWidth - 38) as string[]);
+      const requiredHeight = 12 + questionLines.length * 4.4 + alternativeLines.length * 3.8;
+      if (y + requiredHeight > pageHeight - 20) nextPage();
+      doc.setTextColor(200, 77, 58);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.text(`Questão ${String(question.numero).padStart(2, "0")}`, 15, y);
+      doc.setTextColor(101, 112, 128);
+      doc.setFontSize(7.5);
+      doc.text(question.areaCurta, pageWidth - 15, y, { align: "right" });
+      y += 5;
+      doc.setTextColor(29, 42, 68);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.text(questionLines, 15, y, { lineHeightFactor: 1.35 });
+      y += questionLines.length * 4.4 + 2.2;
+      doc.setFontSize(8.6);
+      (["A", "B", "C", "D"] as const).forEach((letter) => {
+        const lines = doc.splitTextToSize(`${letter}. ${question.alternativas[letter]}`, pageWidth - 38) as string[];
+        doc.text(lines, 20, y, { lineHeightFactor: 1.25 });
+        y += lines.length * 3.8 + 1;
+      });
+      doc.setDrawColor(222, 214, 203);
+      doc.line(15, y + 1, pageWidth - 15, y + 1);
+      y += 6;
+    });
+    const pages = doc.getNumberOfPages();
+    for (let pageNumber = 1; pageNumber <= pages; pageNumber += 1) { doc.setPage(pageNumber); drawFooter(pageNumber); }
+    doc.save(cadernoPdfFilename());
+  };
+  const requestCadernoPrint = () => setPrintDialogOpen(true);
+  const confirmCadernoPrint = () => {
+    printPreview();
+    setPrintDialogOpen(false);
+  };
 
   return (
     <div className="min-h-screen bg-[#F7F3EC] text-[#1D2A44]">
@@ -552,12 +636,18 @@ export default function Home() {
         <div className="top-actions">
           {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => void logout()}>Sair da conta</button></> : <button className="top-timer" onClick={() => openAuth("login")}>Acesso aluno</button>)}
           <button className={`top-timer ${isCriticalTime ? "critical" : ""}`} onClick={() => scrollToSection("questoes")} aria-label="Ir para o cronômetro"><Timer size={15} /><span>{formatDuration(remainingSeconds)}</span></button>
-          {teacherMode && <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir caderno</Button>}
+          {teacherMode && <Button className="print-button" onClick={requestCadernoPrint}><Printer size={16} /> Imprimir caderno</Button>}
           <button className="menu-button" aria-label="Abrir menu" onClick={() => setMenuOpen((value) => !value)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
       </header>
 
       <StudentAuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode={authInitialMode} onLogin={login} onSignup={signup} onRecover={recover} requiresPasswordReset={requiresPasswordReset} onCompletePasswordRecovery={completePasswordRecovery} />
+      <AlertDialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+        <AlertDialogContent className="border-[#D8D0C3] bg-[#FDFBF6] text-[#1D2A44] sm:max-w-md">
+          <AlertDialogHeader><AlertDialogTitle className="font-serif text-2xl">Abrir caderno para impressão?</AlertDialogTitle><AlertDialogDescription className="text-[#5B697A]">O caderno será aberto em uma janela preparada para papel A4, com cabeçalho, rodapé e quatro questões por folha.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className="bg-[#1D2A44] text-white hover:bg-[#2B4164]" onClick={confirmCadernoPrint}><Printer size={15} /> Abrir impressão</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <main id="inicio">
         <section className="hero-section">
@@ -650,7 +740,7 @@ export default function Home() {
             <div className="question-header">
               <div><span className="eyebrow"><span></span> Leitura ativa</span><h2>Banco de questões<br /><i>para explorar.</i></h2></div>
               <span className="workbook-note">folha de aplicação<br />marque uma opção</span>
-              <div className="question-actions"><Button variant="outline" className="download-outline" onClick={() => downloadFile("caderno")}><ArrowDownToLine size={16} /> Baixar caderno</Button>{teacherMode && <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir</Button>}</div>
+              <div className="question-actions"><Button variant="outline" className="download-outline" onClick={() => downloadFile("caderno")}><ArrowDownToLine size={16} /> Baixar caderno</Button>{teacherMode && <Button className="print-button" onClick={requestCadernoPrint}><Printer size={16} /> Imprimir</Button>}</div>
             </div>
             <section className="student-dashboard" id="resultado" aria-label="Painel de desempenho do estudante">
               <span className="workbook-folio">FOLHA 01 · APLICAÇÃO E ACOMPANHAMENTO</span>
@@ -690,7 +780,7 @@ export default function Home() {
         </section>
 
         {teacherMode && <section className="correction-section" id="correcao">
-          <div className="correction-copy"><span className="eyebrow light"><span></span> Correção organizada</span><h2>Do cartão-resposta<br />à <i>próxima aula.</i></h2><p>Use a máscara com as quatro alternativas, consulte o gabarito comentado e faça a correção com rastreabilidade por habilidade.</p><div className="correction-buttons"><Button onClick={() => downloadFile("mascara")}><ArrowDownToLine size={16} /> Baixar máscara</Button><Button variant="outline" className="light-outline" onClick={() => downloadFile("gabarito")}><BookOpenCheck size={16} /> Baixar gabarito</Button></div></div>
+          <div className="correction-copy"><span className="eyebrow light"><span></span> Correção organizada</span><h2>Do cartão-resposta<br />à <i>próxima aula.</i></h2><p>Use a máscara com as quatro alternativas, consulte o gabarito comentado e prepare o caderno para aplicação com paginação A4.</p><div className="correction-buttons"><Button onClick={requestCadernoPrint}><Printer size={16} /> Imprimir caderno</Button><Button variant="outline" className="light-outline" onClick={exportCadernoPdf}><FileDown size={16} /> Exportar caderno PDF</Button><Button variant="outline" className="light-outline" onClick={() => downloadFile("mascara")}><ArrowDownToLine size={16} /> Baixar máscara</Button><Button variant="outline" className="light-outline" onClick={() => downloadFile("gabarito")}><BookOpenCheck size={16} /> Baixar gabarito</Button></div></div>
           <div className="correction-card"><img src="/manus-storage/enem-correction-detail_08ac5859.jpg" alt="Detalhe de uma folha de respostas sendo corrigida" /><div className="correction-card-body"><div><ClipboardCheck size={21} /><span>CHAVE DOCENTE</span></div><h3>100 respostas<br />em uma única matriz.</h3><button onClick={() => setShowKey((value) => !value)}>{showKey ? "Ocultar chave" : "Consultar chave"} <ArrowRight size={16} /></button></div></div>
           {showKey && <div className="answer-key" aria-live="polite"><div className="answer-key-title"><div><span className="mini-label">GABARITO RÁPIDO</span><h3>Chave de correção</h3></div><button onClick={() => setShowKey(false)} aria-label="Fechar chave"><X size={17} /></button></div><div className="answer-key-grid">{questions.map((q) => <div key={q.numero}><span>{String(q.numero).padStart(3, "0")}</span><strong>{q.correta}</strong></div>)}</div></div>}
           <div className="answer-key"><div className="answer-key-title"><div><span className="mini-label">PAINEL DOCENTE</span><h3>Resultados locais</h3></div><div><select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="todas">Todas as turmas</option>{teacherClassrooms.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select><select value={teacherSort} onChange={(event) => setTeacherSort(event.target.value)}><option value="score">Maior pontuação</option><option value="date">Mais recente</option></select></div></div><div className="answer-key-grid">{teacherRows.map((attempt) => <div key={attempt.id}><span>{attempt.studentName} · {attempt.classroom}</span><strong>{attempt.percentage}%</strong></div>)}</div></div>
