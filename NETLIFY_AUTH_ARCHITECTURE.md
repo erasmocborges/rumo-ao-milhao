@@ -21,9 +21,9 @@ O armazenamento de progresso usará uma store global de Blobs, e não uma store 
 
 ## Confirmação e recuperação de acesso
 
-O projeto mantém a confirmação de e-mail obrigatória. Portanto, a primeira tentativa de login só deve ocorrer depois que o usuário abrir o e-mail de confirmação enviado pelo Netlify e concluir o retorno ao domínio `prof-erasmo-simulado-enem.netlify.app`. O aplicativo chama `handleAuthCallback()` no carregamento para processar o token recebido no fragmento da URL. [6]
+O projeto usa confirmação automática de e-mail para o cadastro de alunos, autorizada pela administração, pois os links de confirmação da instância encaminhavam incorretamente para o GitHub. Assim, o primeiro acesso é concluído diretamente no formulário de conta, sem que o aluno precise abrir links de e-mail. O aplicativo mantém o tratamento de callbacks para recuperações de senha que funcionem corretamente no futuro. [6]
 
-Se o link de confirmação abrir uma origem diferente do domínio publicado, o usuário não deve reutilizar o token nem compartilhar a URL completa. O administrador deve reenviar o fluxo de recuperação de senha no painel de Identity, que gera uma nova URL de confirmação vinculada ao domínio da instância; em seguida, deve-se inspecionar apenas a origem de destino caso a falha persista. [7]
+O modo docente não é concedido pelo simples cadastro. A conta precisa usar o domínio `@escola.pr.gov.br` e receber manualmente o papel `teacher` no painel de Identity. Contas fora desse domínio permanecem na experiência de aluno, mesmo que tenham sido usadas em testes anteriores. [7]
 
 > A senha local da interface docente deixa de ser uma proteção suficiente para produção. O controle de acesso passa a depender da autenticação, do papel `teacher` e do e-mail institucional `@escola.pr.gov.br`.
 
