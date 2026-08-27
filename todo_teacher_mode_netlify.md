@@ -35,3 +35,13 @@
 - [x] Executar um simulado de teste com respostas controladas e verificar a correção global e por área.
 - [x] Permitir que o professor selecione blocos de questões antes de imprimir ou exportar o caderno.
 - [x] Exibir uma pré-visualização do conteúdo e da paginação selecionados no modal de confirmação.
+- [x] Definir a arquitetura da plataforma com jornadas separadas para estudante e professor(a), preservando o simulador ENEM existente.
+- [x] Criar catálogo de simulados, listas e modelos por ano ou série e pelas categorias matemáticas definidas.
+- [ ] Definir o modelo de comercialização de acesso digital e materiais para impressão antes de integrar pagamentos.
+- [x] Remover a dependência de autenticação, funções e sincronização do Netlify, migrando para a infraestrutura nativa do projeto.
+- [x] Preservar o simulador ENEM atual como atividade dentro da nova jornada de estudante.
+- [x] Criar uma entrada inicial com as escolhas “Sou estudante” e “Sou professor(a)”.
+- [x] Atualizar a identidade da página para “Me ajuda, prof Erasmo!” com posicionamento claro para estudantes e professores.
+- [x] Aplicar o subtítulo “Atividades, simulados e materiais para ensinar e aprender” na nova entrada da plataforma.
+- [x] Acrescentar um destaque visual matemático original e animado à página inicial.
+- [ ] Criar o repositório privado GitHub “Rumo ao Milhão” após concluir a migração e a nova estrutura inicial.

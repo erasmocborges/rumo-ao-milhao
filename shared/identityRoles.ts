@@ -1,5 +1,5 @@
 export type IdentityRoleSource = {
-  email?: string;
+  email?: string | null;
   role?: string;
   roles?: string[];
   appMetadata?: Record<string, unknown>;
@@ -7,11 +7,12 @@ export type IdentityRoleSource = {
 
 export const STUDENT_ROLE = "student";
 export const TEACHER_ROLE = "teacher";
+export const NATIVE_TEACHER_ROLE = "admin";
 export const AUTHORIZED_TEACHER_EMAIL = "erasmo.borges@escola.pr.gov.br";
 
 export function hasTeacherRole(user: IdentityRoleSource | null | undefined) {
   if (!user) return false;
-  if (user.role === TEACHER_ROLE) return true;
+  if (user.role === TEACHER_ROLE || user.role === NATIVE_TEACHER_ROLE) return true;
   if (user.roles?.includes(TEACHER_ROLE)) return true;
   const metadataRoles = user.appMetadata?.roles;
   return Array.isArray(metadataRoles) && metadataRoles.includes(TEACHER_ROLE);

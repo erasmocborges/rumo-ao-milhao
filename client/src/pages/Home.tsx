@@ -46,10 +46,9 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { StudentAuthDialog } from "@/components/StudentAuthDialog";
 import { questions, areaSummary, type Question } from "@/data/simulado";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { loadRemoteProgress, saveRemoteProgress } from "@/lib/progressApi";
+import { trpc } from "@/lib/trpc";
 import { hasInstitutionalTeacherAccess } from "@shared/identityRoles";
 import { cadernoPdfFilename, paginateCadernoForPrint, selectCadernoPrintBlocks, type CadernoPrintBlock } from "@shared/cadernoPrint";
 import { calculateSimulationScore } from "@shared/simulationScoring";
@@ -242,11 +241,9 @@ function QuestionCard({ q, selected, onSelect, revealed, onReveal, canReveal, di
 }
 
 export default function Home() {
-  const { user, loading, isAuthenticated, login, signup, recover, requiresPasswordReset, completePasswordRecovery, logout } = useAuth();
+  const { user, loading, isAuthenticated, login, logout } = useAuth();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [authOpen, setAuthOpen] = useState(false);
-  const [authInitialMode, setAuthInitialMode] = useState<"login" | "signup">("login");
   const [activeArea, setActiveArea] = useState<FilterArea>("Todas");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -272,10 +269,8 @@ export default function Home() {
   const [cadernoOutputMode, setCadernoOutputMode] = useState<CadernoOutputMode>("print");
   const [selectedCadernoBlocks, setSelectedCadernoBlocks] = useState<string[]>(() => CADERNO_PRINT_BLOCKS.map((block) => block.id));
   const teacherMode = hasInstitutionalTeacherAccess(user);
-  const openAuth = (mode: "login" | "signup") => {
-    setAuthInitialMode(mode);
-    setAuthOpen(true);
-  };
+  const progressQuery = trpc.simulator.getProgress.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const saveProgressMutation = trpc.simulator.saveProgress.useMutation();
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -318,24 +313,22 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    let active = true;
     if (!isAuthenticated) {
       setRemotePayload(null);
       setSyncState("local");
-      return () => { active = false; };
+      return;
     }
-    setSyncState("syncing");
-    void loadRemoteProgress()
-      .then((result) => {
-        if (!active) return;
-        setRemotePayload(result.payload);
-        setSyncState("cloud");
-      })
-      .catch(() => {
-        if (active) setSyncState("error");
-      });
-    return () => { active = false; };
-  }, [isAuthenticated, user?.id]);
+    if (progressQuery.isPending) {
+      setSyncState("syncing");
+      return;
+    }
+    if (progressQuery.isError) {
+      setSyncState("error");
+      return;
+    }
+    setRemotePayload(progressQuery.data?.payload ?? null);
+    setSyncState("cloud");
+  }, [isAuthenticated, progressQuery.data?.payload, progressQuery.isError, progressQuery.isPending]);
 
   useEffect(() => {
     if (!remotePayload) return;
@@ -410,7 +403,7 @@ export default function Home() {
     if (!isAuthenticated) return;
     setSyncState("syncing");
     try {
-      await saveRemoteProgress(JSON.stringify(payload));
+      await saveProgressMutation.mutateAsync({ payload: JSON.stringify(payload) });
       setSyncState("cloud");
       setProgressNotice("Progresso salvo e sincronizado com sua conta.");
     } catch {
@@ -652,14 +645,13 @@ export default function Home() {
           <button onClick={() => { scrollToSection("fontes"); setMenuOpen(false); }}>Fontes</button>
         </nav>
         <div className="top-actions">
-          {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => void logout()}>Sair da conta</button></> : <button className="top-timer" onClick={() => openAuth("login")}>Acesso aluno</button>)}
+          {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => void logout()}>Sair da conta</button></> : <button className="top-timer" onClick={login}>Acesso aluno</button>)}
           <button className={`top-timer ${isCriticalTime ? "critical" : ""}`} onClick={() => scrollToSection("questoes")} aria-label="Ir para o cronômetro"><Timer size={15} /><span>{formatDuration(remainingSeconds)}</span></button>
           {teacherMode && <Button className="print-button" onClick={() => requestCadernoOutput("print")}><Printer size={16} /> Imprimir caderno</Button>}
           <button className="menu-button" aria-label="Abrir menu" onClick={() => setMenuOpen((value) => !value)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
       </header>
 
-      <StudentAuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode={authInitialMode} onLogin={login} onSignup={signup} onRecover={recover} requiresPasswordReset={requiresPasswordReset} onCompletePasswordRecovery={completePasswordRecovery} />
       <AlertDialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
         <AlertDialogContent className="max-h-[90vh] overflow-y-auto border-[#D8D0C3] bg-[#FDFBF6] text-[#1D2A44] sm:max-w-3xl">
           <AlertDialogHeader><AlertDialogTitle className="font-serif text-2xl">Preparar caderno docente</AlertDialogTitle><AlertDialogDescription className="text-[#5B697A]">Escolha os blocos e revise a paginação A4 antes de {cadernoOutputMode === "pdf" ? "gerar o PDF" : "abrir a impressão"}.</AlertDialogDescription></AlertDialogHeader>
@@ -818,7 +810,7 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="footer"><div className="footer-brand"><img src="/manus-storage/enem-logo-symbol_049e20d0.png" alt="" /><span><strong>SIMULADO</strong><em>ENEM</em></span></div><p>Preparado para revisão, aplicação e correção em contexto escolar.</p>{!teacherMode && <button className="teacher-developer-access" onClick={() => openAuth("login")}><LockKeyhole size={13} /> Acesso ao professor desenvolvedor</button>}<a href="#inicio">Voltar ao topo ↑</a></footer>
+      <footer className="footer"><div className="footer-brand"><img src="/manus-storage/enem-logo-symbol_049e20d0.png" alt="" /><span><strong>SIMULADO</strong><em>ENEM</em></span></div><p>Preparado para revisão, aplicação e correção em contexto escolar.</p>{!teacherMode && <button className="teacher-developer-access" onClick={login}><LockKeyhole size={13} /> Acesso ao professor desenvolvedor</button>}<a href="#inicio">Voltar ao topo ↑</a></footer>
     </div>
   );
 }

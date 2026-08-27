@@ -1,0 +1,21 @@
+import { ArrowRight, BookMarked, FilePenLine, FolderOpen, GraduationCap, PencilRuler, School } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { filterCatalog, MATH_CATEGORIES, SCHOOL_LEVELS } from "@shared/activityCatalog";
+
+const materials = [
+  { title: "Sequência: Equações e estratégias", format: "Modelo editável", level: "1.ª série", category: "Números e Álgebra", copy: "Roteiro de aula, lista de exercícios e folha de acompanhamento em um único material.", status: "Catálogo piloto" },
+  { title: "Estação de aprendizagem: Área e perímetro", format: "Atividade pronta", level: "7.º ano", category: "Geometria", copy: "Proposta em estações para aplicar, adaptar e imprimir conforme a turma.", status: "Catálogo piloto" },
+  { title: "Projeto: Consumo consciente", format: "Material para impressão", level: "8.º ano", category: "Grandezas e Medidas", copy: "Situações didáticas com medidas, orçamento e tomada de decisão.", status: "Catálogo piloto" },
+  { title: "Oficina: Leitura de gráficos", format: "Modelo editável", level: "9.º ano", category: "Probabilidade e Estatística", copy: "Planejamento de oficina com problemas, rubrica e atividade de retomada.", status: "Catálogo piloto" },
+] as const;
+
+export default function TeacherHub() {
+  const { isAuthenticated, login } = useAuth();
+  const [level, setLevel] = useState("Todos");
+  const [category, setCategory] = useState("Todas");
+  const filteredMaterials = useMemo(() => filterCatalog(materials, level, category), [level, category]);
+
+  return <div className="hub-page teacher-page"><header className="hub-header"><Link href="/" className="platform-brand"><span className="platform-brand-mark">M</span><span><strong>ME AJUDA,</strong><em>prof Erasmo!</em></span></Link><div className="hub-header-label"><School size={18} /><span>Área do professor(a)</span></div><Link href="/estudante" className="hub-switch">Sou estudante <ArrowRight size={14} /></Link></header><main><section className="hub-hero teacher-hero"><span className="platform-kicker"><i></i> Planejamento com mais respiro</span><h1>Menos tempo procurando.<br /><em>Mais tempo ensinando.</em></h1><p>Organize suas aulas com modelos editáveis, atividades prontas e propostas que respeitam a etapa de cada turma.</p><div className="hub-benefits"><span><PencilRuler size={16} /> Arquivos editáveis</span><span><BookMarked size={16} /> Sequências prontas</span><span><FolderOpen size={16} /> Organização por série</span></div>{!isAuthenticated && <button className="hub-login" onClick={login}>Entrar para organizar materiais <ArrowRight size={15} /></button>}</section><section className="catalog-section"><div className="catalog-heading"><div><span>CATÁLOGO DO PROFESSOR</span><h2>Um ponto de partida<br />para cada <em>aula.</em></h2></div><p>Materiais demonstrativos. A venda será ativada após a configuração do checkout.</p></div><div className="catalog-filters"><fieldset><legend>Ano ou série da turma</legend><div>{SCHOOL_LEVELS.map((item) => <button type="button" className={item === level ? "active" : ""} onClick={() => setLevel(item)} key={item}>{item}</button>)}</div></fieldset><fieldset><legend>Categoria matemática</legend><div>{MATH_CATEGORIES.map((item) => <button type="button" className={item === category ? "active" : ""} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div></fieldset></div><div className="activity-grid teacher-material-grid">{filteredMaterials.map((material) => <article className="activity-card teacher-material" key={material.title}><div className="activity-card-top"><span>{material.format}</span><small className="soon">{material.status}</small></div><h3>{material.title}</h3><p>{material.copy}</p><div className="activity-meta"><span>{material.level}</span><span>{material.category}</span></div><button disabled><FilePenLine size={15} /> Detalhes em breve</button></article>)}</div></section><section className="hub-callout teacher-callout"><GraduationCap size={28} /><div><span>UM RECURSO JÁ DISPONÍVEL</span><h2>Simulado ENEM com correção e impressão docente</h2><p>Utilize o caderno autoral com seu painel de correção, PDF e impressão por blocos.</p></div><Link href="/simulado-enem">Abrir simulador <ArrowRight size={16} /></Link></section></main></div>;
+}
