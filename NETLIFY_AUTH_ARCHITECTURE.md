@@ -23,7 +23,7 @@ O armazenamento de progresso usará uma store global de Blobs, e não uma store 
 
 O projeto usa confirmação automática de e-mail para o cadastro de alunos, autorizada pela administração, pois os links de confirmação da instância encaminhavam incorretamente para o GitHub. Assim, o primeiro acesso é concluído diretamente no formulário de conta, sem que o aluno precise abrir links de e-mail. O aplicativo mantém o tratamento de callbacks para recuperações de senha que funcionem corretamente no futuro. [6]
 
-O modo docente não é concedido pelo simples cadastro. A conta precisa usar o domínio `@escola.pr.gov.br` e receber manualmente o papel `teacher` no painel de Identity. Contas fora desse domínio permanecem na experiência de aluno, mesmo que tenham sido usadas em testes anteriores. [7]
+O modo docente não é concedido pelo simples cadastro. Somente a conta `erasmo.borges@escola.pr.gov.br`, após receber manualmente o papel `teacher` no painel de Identity, pode acessar os materiais docentes. Todas as demais contas permanecem na experiência de aluno, inclusive outras contas do domínio institucional. [7]
 
 > A senha local da interface docente deixa de ser uma proteção suficiente para produção. O controle de acesso passa a depender da autenticação, do papel `teacher` e do e-mail institucional `@escola.pr.gov.br`.
 

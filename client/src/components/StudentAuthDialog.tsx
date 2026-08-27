@@ -11,10 +11,12 @@ import {
 } from "@/components/ui/dialog";
 
 type AuthMode = "login" | "signup" | "recovery-request" | "reset-password";
+type InitialAuthMode = "login" | "signup";
 
 type StudentAuthDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialMode?: InitialAuthMode;
   onLogin: (email: string, password: string) => Promise<void>;
   onSignup: (email: string, password: string, name: string) => Promise<boolean>;
   onRecover: (email: string) => Promise<void>;
@@ -28,7 +30,7 @@ function readableError(error: unknown) {
   return "Não foi possível concluir o acesso agora. Tente novamente em alguns instantes.";
 }
 
-export function StudentAuthDialog({ open, onOpenChange, onLogin, onSignup, onRecover, requiresPasswordReset, onCompletePasswordRecovery }: StudentAuthDialogProps) {
+export function StudentAuthDialog({ open, onOpenChange, initialMode = "login", onLogin, onSignup, onRecover, requiresPasswordReset, onCompletePasswordRecovery }: StudentAuthDialogProps) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -45,6 +47,15 @@ export function StudentAuthDialog({ open, onOpenChange, onLogin, onSignup, onRec
     setNotice("Defina uma nova senha para concluir o acesso à sua conta.");
     onOpenChange(true);
   }, [onOpenChange, requiresPasswordReset]);
+
+  useEffect(() => {
+    if (!open || requiresPasswordReset) return;
+    setMode(initialMode);
+    setNotice("");
+    setError("");
+    setPassword("");
+    setConfirmation("");
+  }, [initialMode, open, requiresPasswordReset]);
 
   const changeMode = (next: AuthMode) => {
     setMode(next);
@@ -72,7 +83,7 @@ export function StudentAuthDialog({ open, onOpenChange, onLogin, onSignup, onRec
         onOpenChange(false);
       } else if (mode === "signup") {
         const authenticated = await onSignup(email.trim(), password, name.trim());
-        setNotice(authenticated ? "Conta criada e conectada. Seu progresso poderá ser sincronizado." : "Conta criada. Confirme o e-mail enviado pelo Netlify e volte para entrar.");
+        setNotice(authenticated ? "Conta criada e conectada. Seu progresso poderá ser sincronizado." : "Conta criada. Use os dados cadastrados para entrar e sincronizar o simulado.");
         if (authenticated) onOpenChange(false);
       } else if (mode === "recovery-request") {
         await onRecover(email.trim());

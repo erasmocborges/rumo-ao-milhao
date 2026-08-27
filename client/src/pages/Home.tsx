@@ -223,6 +223,7 @@ export default function Home() {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [authInitialMode, setAuthInitialMode] = useState<"login" | "signup">("login");
   const [activeArea, setActiveArea] = useState<FilterArea>("Todas");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -245,6 +246,10 @@ export default function Home() {
   const [syncState, setSyncState] = useState<"local" | "syncing" | "cloud" | "error">("local");
   const [remotePayload, setRemotePayload] = useState<string | null>(null);
   const teacherMode = hasInstitutionalTeacherAccess(user);
+  const openAuth = (mode: "login" | "signup") => {
+    setAuthInitialMode(mode);
+    setAuthOpen(true);
+  };
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -545,7 +550,7 @@ export default function Home() {
           <button onClick={() => { scrollToSection("fontes"); setMenuOpen(false); }}>Fontes</button>
         </nav>
         <div className="top-actions">
-          {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => void logout()}>Sair · {user?.name || user?.email || "Conta"}</button></> : <button className="top-timer" onClick={() => setAuthOpen(true)}>Entrar para sincronizar</button>)}
+          {!loading && (isAuthenticated ? <><span className={`top-timer ${syncState}`}>{syncState === "cloud" ? "✓ Sincronizado" : syncState === "syncing" ? "↻ Sincronizando" : syncState === "error" ? "! Salvo localmente" : "• Sem salvar"}</span><button className="top-timer" onClick={() => void logout()}>Sair · {user?.name || user?.email || "Conta"}</button></> : <button className="top-timer" onClick={() => openAuth("login")}>Entrar para sincronizar</button>)}
           {teacherMode ? <span className="top-timer">Modo docente</span> : <button className="top-timer" onClick={() => scrollToSection("acesso-docente")}>Acesso docente</button>}
           <button className={`top-timer ${isCriticalTime ? "critical" : ""}`} onClick={() => scrollToSection("questoes")} aria-label="Ir para o cronômetro"><Timer size={15} /><span>{formatDuration(remainingSeconds)}</span></button>
           <Button className="print-button" onClick={printPreview}><Printer size={16} /> Imprimir caderno</Button>
@@ -553,7 +558,7 @@ export default function Home() {
         </div>
       </header>
 
-      <StudentAuthDialog open={authOpen} onOpenChange={setAuthOpen} onLogin={login} onSignup={signup} onRecover={recover} requiresPasswordReset={requiresPasswordReset} onCompletePasswordRecovery={completePasswordRecovery} />
+      <StudentAuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode={authInitialMode} onLogin={login} onSignup={signup} onRecover={recover} requiresPasswordReset={requiresPasswordReset} onCompletePasswordRecovery={completePasswordRecovery} />
 
       <main id="inicio">
         <section className="hero-section">
@@ -692,7 +697,7 @@ export default function Home() {
           <div className="answer-key"><div className="answer-key-title"><div><span className="mini-label">PAINEL DOCENTE</span><h3>Resultados locais</h3></div><div><select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="todas">Todas as turmas</option>{teacherClassrooms.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select><select value={teacherSort} onChange={(event) => setTeacherSort(event.target.value)}><option value="score">Maior pontuação</option><option value="date">Mais recente</option></select></div></div><div className="answer-key-grid">{teacherRows.map((attempt) => <div key={attempt.id}><span>{attempt.studentName} · {attempt.classroom}</span><strong>{attempt.percentage}%</strong></div>)}</div></div>
         </section>}
 
-        {!teacherMode && <section className="sources-section" id="acesso-docente"><div className="sources-title"><span className="eyebrow"><span></span> Área restrita</span><h2>Acesso<br /><i>docente.</i></h2></div><div className="sources-list"><div className="disclaimer"><LockKeyhole size={17} /><p><strong>Materiais de correção protegidos por conta institucional.</strong> Máscara, gabarito e chave ficam disponíveis somente a contas com papel docente autorizado e e-mail <strong>@escola.pr.gov.br</strong>.</p></div>{isAuthenticated ? <p className="text-sm leading-6 text-[#435064]">Esta conta não cumpre os requisitos de acesso docente. Entre com sua conta institucional <strong>@escola.pr.gov.br</strong> e peça ao administrador do simulado a atribuição do perfil docente.</p> : <Button className="print-button" onClick={() => setAuthOpen(true)}>Entrar com conta institucional</Button>}</div></section>}
+        {!teacherMode && <section className="sources-section" id="acesso-docente"><div className="sources-title"><span className="eyebrow"><span></span> Área restrita</span><h2>Acesso<br /><i>docente.</i></h2></div><div className="sources-list"><div className="disclaimer"><LockKeyhole size={17} /><p><strong>Materiais de correção protegidos por conta institucional autorizada.</strong> Máscara, gabarito e chave ficam disponíveis exclusivamente para <strong>erasmo.borges@escola.pr.gov.br</strong>, após a atribuição do perfil docente.</p></div>{isAuthenticated ? <p className="text-sm leading-6 text-[#435064]">Esta conta não é a credencial docente autorizada. Entre com <strong>erasmo.borges@escola.pr.gov.br</strong> para acessar a área restrita.</p> : <Button className="print-button" onClick={() => openAuth("signup")}>Criar acesso docente institucional</Button>}</div></section>}
 
         <section className="sources-section" id="fontes">
           <div className="sources-title"><span className="eyebrow"><span></span> Transparência editorial</span><h2>Fontes e<br /><i>delimitação.</i></h2></div>

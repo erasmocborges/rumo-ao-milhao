@@ -9,10 +9,10 @@ describe("controle de acesso no Netlify", () => {
     expect(hasTeacherRole({ roles: ["student"] })).toBe(false);
   });
 
-  it("libera o modo docente somente para papel docente e domínio institucional", () => {
-    expect(hasInstitutionalTeacherAccess({ email: "professor@escola.pr.gov.br", roles: ["teacher"] })).toBe(true);
-    expect(hasInstitutionalTeacherAccess({ email: "professor@gmail.com", roles: ["teacher"] })).toBe(false);
-    expect(hasInstitutionalTeacherAccess({ email: "aluno@escola.pr.gov.br", roles: ["student"] })).toBe(false);
+  it("libera o modo docente apenas para a credencial institucional autorizada e com papel docente", () => {
+    expect(hasInstitutionalTeacherAccess({ email: "erasmo.borges@escola.pr.gov.br", roles: ["teacher"] })).toBe(true);
+    expect(hasInstitutionalTeacherAccess({ email: "outro.professor@escola.pr.gov.br", roles: ["teacher"] })).toBe(false);
+    expect(hasInstitutionalTeacherAccess({ email: "erasmo.borges@escola.pr.gov.br", roles: ["student"] })).toBe(false);
   });
 
   it("preserva papéis existentes e adiciona o papel padrão de estudante", () => {

@@ -13,8 +13,11 @@
 - [x] Diagnosticar a falha relatada no cadastro ou login pelo Netlify Identity no domínio publicado.
 - [x] Corrigir o fluxo de sessão e validar uma autenticação real de aluno no Netlify.
 - [x] Melhorar a mensagem de falha de login para orientar o cadastro e a confirmação de uma conta Netlify Identity independente.
-- [ ] Corrigir o endereço de redirecionamento da confirmação de e-mail do Netlify Identity, que abriu o repositório GitHub em vez do simulado.
+- [x] Mitigar o endereço incorreto da confirmação de e-mail habilitando o cadastro direto no Netlify Identity.
 - [x] Processar o token de recuperação na página do simulado e permitir a definição de uma nova senha após o retorno do e-mail.
-- [ ] Reconfigurar o Netlify Identity para permitir cadastro com acesso direto, eliminando a dependência dos links de confirmação com origem incorreta.
+- [x] Reconfigurar o Netlify Identity para permitir cadastro com acesso direto, eliminando a dependência dos links de confirmação com origem incorreta.
 - [ ] Validar o salvamento sincronizado com uma conta autenticada pelo fluxo direto.
-- [ ] Restringir a atribuição do papel docente a endereços institucionais com domínio `@escola.pr.gov.br` e documentar a política administrativa.
+- [x] Restringir a interface docente ao papel autorizado e ao domínio institucional `@escola.pr.gov.br`; o papel anterior não institucional foi removido.
+- [ ] Criar a conta Identity institucional e atribuir-lhe o papel docente para validar a proteção no domínio publicado.
+- [ ] Diagnosticar e corrigir a falha genérica exibida no envio do formulário de cadastro ou login institucional.
+- [ ] Limitar o modo docente exclusivamente à conta `erasmo.borges@escola.pr.gov.br` e remover autorizações docentes de outras contas.

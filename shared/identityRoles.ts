@@ -7,7 +7,7 @@ export type IdentityRoleSource = {
 
 export const STUDENT_ROLE = "student";
 export const TEACHER_ROLE = "teacher";
-export const INSTITUTIONAL_TEACHER_DOMAIN = "@escola.pr.gov.br";
+export const AUTHORIZED_TEACHER_EMAIL = "erasmo.borges@escola.pr.gov.br";
 
 export function hasTeacherRole(user: IdentityRoleSource | null | undefined) {
   if (!user) return false;
@@ -18,7 +18,7 @@ export function hasTeacherRole(user: IdentityRoleSource | null | undefined) {
 }
 
 export function hasInstitutionalTeacherAccess(user: IdentityRoleSource | null | undefined) {
-  if (!user?.email?.trim().toLocaleLowerCase("pt-BR").endsWith(INSTITUTIONAL_TEACHER_DOMAIN)) return false;
+  if (user?.email?.trim().toLocaleLowerCase("pt-BR") !== AUTHORIZED_TEACHER_EMAIL) return false;
   return hasTeacherRole(user);
 }
 
