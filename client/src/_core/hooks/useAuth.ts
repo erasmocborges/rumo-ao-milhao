@@ -1,10 +1,11 @@
-import { getUser, handleAuthCallback, login, logout as identityLogout, onAuthChange, requestPasswordRecovery, signup, type User } from "@netlify/identity";
+import { getUser, handleAuthCallback, login, logout as identityLogout, onAuthChange, requestPasswordRecovery, signup, updateUser, type User } from "@netlify/identity";
 import { useCallback, useEffect, useState } from "react";
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [requiresPasswordReset, setRequiresPasswordReset] = useState(false);
 
   const refresh = useCallback(async () => {
     const current = await getUser();
@@ -16,7 +17,8 @@ export function useAuth() {
     let active = true;
     const loadIdentity = async () => {
       try {
-        await handleAuthCallback();
+        const callback = await handleAuthCallback();
+        if (callback?.type === "recovery") setRequiresPasswordReset(true);
         const current = await getUser();
         if (active) setUser(current);
       } catch (reason) {
@@ -48,6 +50,13 @@ export function useAuth() {
     await requestPasswordRecovery(email);
   }, []);
 
+  const completePasswordRecovery = useCallback(async (password: string) => {
+    setError(null);
+    await updateUser({ password });
+    setRequiresPasswordReset(false);
+    await refresh();
+  }, [refresh]);
+
   const logout = useCallback(async () => {
     try {
       await identityLogout();
@@ -56,5 +65,5 @@ export function useAuth() {
     }
   }, []);
 
-  return { user, loading, error, isAuthenticated: Boolean(user), refresh, login: signIn, signup: signUp, recover, logout };
+  return { user, loading, error, isAuthenticated: Boolean(user), requiresPasswordReset, refresh, login: signIn, signup: signUp, recover, completePasswordRecovery, logout };
 }

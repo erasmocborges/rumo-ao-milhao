@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasTeacherRole, rolesWithDefaultStudent } from "../shared/identityRoles";
+import { hasInstitutionalTeacherAccess, hasTeacherRole, rolesWithDefaultStudent } from "../shared/identityRoles";
 import { isProgressPayload, MAX_PROGRESS_PAYLOAD_LENGTH, progressKeyForUser } from "../shared/progressPayload";
 
 describe("controle de acesso no Netlify", () => {
@@ -7,6 +7,12 @@ describe("controle de acesso no Netlify", () => {
     expect(hasTeacherRole({ roles: ["student", "teacher"] })).toBe(true);
     expect(hasTeacherRole({ appMetadata: { roles: ["teacher"] } })).toBe(true);
     expect(hasTeacherRole({ roles: ["student"] })).toBe(false);
+  });
+
+  it("libera o modo docente somente para papel docente e domínio institucional", () => {
+    expect(hasInstitutionalTeacherAccess({ email: "professor@escola.pr.gov.br", roles: ["teacher"] })).toBe(true);
+    expect(hasInstitutionalTeacherAccess({ email: "professor@gmail.com", roles: ["teacher"] })).toBe(false);
+    expect(hasInstitutionalTeacherAccess({ email: "aluno@escola.pr.gov.br", roles: ["student"] })).toBe(false);
   });
 
   it("preserva papéis existentes e adiciona o papel padrão de estudante", () => {

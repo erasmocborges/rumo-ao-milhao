@@ -13,13 +13,19 @@ A implantação no Netlify passará a usar **Netlify Identity** para contas de a
 
 ## Regras de segurança
 
-As rotas que alteram estado devem validar a origem da requisição. A função deve identificar o usuário exclusivamente pela sessão do Netlify Identity, jamais por um identificador enviado pelo navegador. O progresso será gravado sob uma chave derivada do identificador do usuário e jamais será retornado para outro usuário. O papel `teacher` será atribuído manualmente pelo painel do Netlify à conta docente; alunos novos receberão o papel `student`.
+As rotas que alteram estado devem validar a origem da requisição. A função deve identificar o usuário exclusivamente pela sessão do Netlify Identity, jamais por um identificador enviado pelo navegador. O progresso será gravado sob uma chave derivada do identificador do usuário e jamais será retornado para outro usuário. O papel `teacher` será atribuído manualmente pelo painel do Netlify apenas a uma conta docente com e-mail `@escola.pr.gov.br`; alunos novos receberão o papel `student`.
 
 O pacote `@netlify/identity` deve ser usado em funções modernas do Netlify, exportadas como `default`; o formato legado `export { handler }` não é compatível com sua sessão de servidor. No navegador, o login, o cadastro, a confirmação de e-mail e o encerramento de sessão usam a mesma biblioteca e o aplicativo deve processar os tokens de retorno no carregamento da página. [3] [5]
 
 O armazenamento de progresso usará uma store global de Blobs, e não uma store específica de deploy, para que as respostas persistam entre novas publicações. A store é adequada para leituras frequentes e escritas pouco frequentes de um JSON individual; a regra “última gravação vence” será comunicada na interface para o caso de dois dispositivos salvarem ao mesmo tempo. [4]
 
-> A senha local da interface docente deixa de ser uma proteção suficiente para produção. O controle de acesso passa a depender da autenticação e do papel de usuário verificado no servidor.
+## Confirmação e recuperação de acesso
+
+O projeto mantém a confirmação de e-mail obrigatória. Portanto, a primeira tentativa de login só deve ocorrer depois que o usuário abrir o e-mail de confirmação enviado pelo Netlify e concluir o retorno ao domínio `prof-erasmo-simulado-enem.netlify.app`. O aplicativo chama `handleAuthCallback()` no carregamento para processar o token recebido no fragmento da URL. [6]
+
+Se o link de confirmação abrir uma origem diferente do domínio publicado, o usuário não deve reutilizar o token nem compartilhar a URL completa. O administrador deve reenviar o fluxo de recuperação de senha no painel de Identity, que gera uma nova URL de confirmação vinculada ao domínio da instância; em seguida, deve-se inspecionar apenas a origem de destino caso a falha persista. [7]
+
+> A senha local da interface docente deixa de ser uma proteção suficiente para produção. O controle de acesso passa a depender da autenticação, do papel `teacher` e do e-mail institucional `@escola.pr.gov.br`.
 
 ## Fontes técnicas
 
@@ -34,3 +40,5 @@ O Netlify Identity fornece cadastro por e-mail e senha, verificação de usuári
 [3]: https://docs.netlify.com/manage/security/secure-access-to-sites/identity/overview/ "Authenticate users with Netlify Identity"
 [4]: https://docs.netlify.com/build/data-and-storage/netlify-blobs/ "Netlify Blobs"
 [5]: https://docs.netlify.com/manage/security/secure-access-to-sites/identity/use-identity-in-functions/ "Use Identity in functions — Netlify"
+[6]: https://docs.netlify.com/manage/security/secure-access-to-sites/identity/get-started/ "Add Identity to your project — Netlify"
+[7]: https://docs.netlify.com/manage/security/secure-access-to-sites/identity/manage-existing-users/ "Manage existing Identity users — Netlify"

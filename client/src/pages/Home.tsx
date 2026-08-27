@@ -49,7 +49,7 @@ import { StudentAuthDialog } from "@/components/StudentAuthDialog";
 import { questions, areaSummary, type Question } from "@/data/simulado";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { loadRemoteProgress, saveRemoteProgress } from "@/lib/progressApi";
-import { hasTeacherRole } from "@shared/identityRoles";
+import { hasInstitutionalTeacherAccess } from "@shared/identityRoles";
 
 type AreaName = (typeof questions)[number]["area"];
 type FilterArea = AreaName | "Todas";
@@ -219,7 +219,7 @@ function QuestionCard({ q, selected, onSelect, revealed, onReveal, canReveal, di
 }
 
 export default function Home() {
-  const { user, loading, isAuthenticated, login, signup, recover, logout } = useAuth();
+  const { user, loading, isAuthenticated, login, signup, recover, requiresPasswordReset, completePasswordRecovery, logout } = useAuth();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
@@ -244,7 +244,7 @@ export default function Home() {
   const [teacherSort, setTeacherSort] = useState("score");
   const [syncState, setSyncState] = useState<"local" | "syncing" | "cloud" | "error">("local");
   const [remotePayload, setRemotePayload] = useState<string | null>(null);
-  const teacherMode = hasTeacherRole(user);
+  const teacherMode = hasInstitutionalTeacherAccess(user);
 
   const filteredQuestions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
@@ -553,7 +553,7 @@ export default function Home() {
         </div>
       </header>
 
-      <StudentAuthDialog open={authOpen} onOpenChange={setAuthOpen} onLogin={login} onSignup={signup} onRecover={recover} />
+      <StudentAuthDialog open={authOpen} onOpenChange={setAuthOpen} onLogin={login} onSignup={signup} onRecover={recover} requiresPasswordReset={requiresPasswordReset} onCompletePasswordRecovery={completePasswordRecovery} />
 
       <main id="inicio">
         <section className="hero-section">
